@@ -48,7 +48,7 @@ git diff HEAD~1 | dripbird
 git diff /dev/null somefile.ts | dripbird
 ```
 
-Dripbird prints a summary of every change it applies, modifies files in place, and
+dripbird prints a summary of every change it applies, modifies files in place, and
 exits 1 if any file was changed.
 
 ## Refactors
