@@ -1,4 +1,5 @@
 pre-commit:
+    piped: true
     commands:
         fmt:
             run: deno fmt --check {staged_files}
@@ -6,3 +7,5 @@ pre-commit:
         lint:
             run: deno lint {staged_files}
             glob: "*.{ts,js}"
+        test:
+            run: scripts/check_coverage.sh
