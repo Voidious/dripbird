@@ -6,6 +6,16 @@ export interface DiffHunk {
     oldCount: number;
 }
 
+export interface ChangedRange {
+    start: number;
+    end: number;
+}
+
+export interface FileChanges {
+    file: string;
+    ranges: ChangedRange[];
+}
+
 export function parseDiff(diff: string): DiffHunk[] {
     const hunks: DiffHunk[] = [];
     const lines = diff.split("\n");
@@ -33,4 +43,24 @@ export function parseDiff(diff: string): DiffHunk[] {
     }
 
     return hunks;
+}
+
+export function groupByFile(hunks: DiffHunk[]): FileChanges[] {
+    const map = new Map<string, ChangedRange[]>();
+    for (const hunk of hunks) {
+        if (hunk.file === "/dev/null" || hunk.newCount === 0) continue;
+        let ranges = map.get(hunk.file);
+        if (!ranges) {
+            ranges = [];
+            map.set(hunk.file, ranges);
+        }
+        ranges.push({
+            start: hunk.newStart,
+            end: hunk.newStart + hunk.newCount - 1,
+        });
+    }
+    return Array.from(map.entries()).map(([file, ranges]) => ({
+        file,
+        ranges,
+    }));
 }

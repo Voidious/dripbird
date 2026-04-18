@@ -1,5 +1,5 @@
 import { assert, assertEquals } from "@std/assert";
-import { readStream, run } from "../src/main.ts";
+import { readStream, run, runInDir } from "../src/main.ts";
 
 function makeStream(data: string): ReadableStream<Uint8Array> {
     const encoded = new TextEncoder().encode(data);
@@ -58,48 +58,141 @@ Deno.test("run returns 0 for diff with no parseable hunks", async () => {
     assertEquals(await run("some text\nno diff here"), 0);
 });
 
-Deno.test("run returns 0 and prints summary for valid diff", () => {
-    const messages: string[] = [];
-    const original = console.error;
-    console.error = (...args: unknown[]) => messages.push(args.join(" "));
+Deno.test(
+    "runInDir applies refactors and returns 1",
+    async () => {
+        const tempDir = await Deno.makeTempDir();
+        const filePath = `${tempDir}/test.ts`;
+        await Deno.writeTextFile(
+            filePath,
+            "if (!a) {\n    b();\n} else {\n    c();\n}\n",
+        );
 
-    try {
         const diff = [
-            "--- a/foo.ts",
-            "+++ b/foo.ts",
-            "@@ -1,3 +1,4 @@",
-            " hello",
-            "+world",
+            "--- a/test.ts",
+            "+++ b/test.ts",
+            "@@ -1,5 +1,5 @@",
+            " if (!a) {",
         ].join("\n");
-        assertEquals(run(diff), 0);
-        assert(messages[0].includes("1 hunk(s)"));
-        assert(messages[0].includes("1 file(s)"));
-        assert(messages[1].includes("no refactors"));
-    } finally {
-        console.error = original;
-    }
-});
 
-Deno.test("run counts multiple files in summary", async () => {
-    const messages: string[] = [];
-    const original = console.error;
-    console.error = (...args: unknown[]) => messages.push(args.join(" "));
+        const exitCode = await runInDir(diff, tempDir);
+        assertEquals(exitCode, 1);
 
-    try {
+        const modified = await Deno.readTextFile(filePath);
+        assert(modified.includes("if (a)"));
+        assert(!modified.includes("if (!a)"));
+
+        await Deno.remove(tempDir, { recursive: true });
+    },
+);
+
+Deno.test(
+    "runInDir returns 0 when no refactors apply",
+    async () => {
+        const tempDir = await Deno.makeTempDir();
+        const filePath = `${tempDir}/test.ts`;
+        const original = "const x = 1;\nconsole.log(x);\n";
+        await Deno.writeTextFile(filePath, original);
+
         const diff = [
-            "--- a/alpha.ts",
-            "+++ b/alpha.ts",
-            "@@ -1,2 +1,3 @@",
-            " a",
-            "--- b/beta.ts",
-            "+++ b/beta.ts",
-            "@@ -5,3 +5,4 @@",
-            " b",
+            "--- a/test.ts",
+            "+++ b/test.ts",
+            "@@ -1,2 +1,2 @@",
+            " const x = 1;",
         ].join("\n");
-        assertEquals(await run(diff), 0);
-        assert(messages[0].includes("2 hunk(s)"));
-        assert(messages[0].includes("2 file(s)"));
-    } finally {
-        console.error = original;
-    }
-});
+
+        const exitCode = await runInDir(diff, tempDir);
+        assertEquals(exitCode, 0);
+
+        const content = await Deno.readTextFile(filePath);
+        assertEquals(content, original);
+
+        await Deno.remove(tempDir, { recursive: true });
+    },
+);
+
+Deno.test(
+    "runInDir skips files that cannot be read",
+    async () => {
+        const tempDir = await Deno.makeTempDir();
+
+        const messages: string[] = [];
+        const original = console.error;
+        console.error = (...args: unknown[]) => messages.push(args.join(" "));
+
+        try {
+            const diff = [
+                "--- a/missing.ts",
+                "+++ b/missing.ts",
+                "@@ -1,3 +1,3 @@",
+                " x",
+            ].join("\n");
+
+            const exitCode = await runInDir(diff, tempDir);
+            assertEquals(exitCode, 0);
+            assert(
+                messages.some((m) => m.includes("skipping")),
+            );
+        } finally {
+            console.error = original;
+        }
+
+        await Deno.remove(tempDir, { recursive: true });
+    },
+);
+
+Deno.test(
+    "runInDir processes multiple files",
+    async () => {
+        const tempDir = await Deno.makeTempDir();
+
+        const messages: string[] = [];
+        const original = console.error;
+        console.error = (...args: unknown[]) => messages.push(args.join(" "));
+
+        try {
+            await Deno.writeTextFile(
+                `${tempDir}/alpha.ts`,
+                "if (!a) {\n    b();\n} else {\n    c();\n}\n",
+            );
+            await Deno.writeTextFile(
+                `${tempDir}/beta.ts`,
+                "const x = 1;\n",
+            );
+
+            const diff = [
+                "--- a/alpha.ts",
+                "+++ b/alpha.ts",
+                "@@ -1,5 +1,5 @@",
+                " if (!a) {",
+                "--- b/beta.ts",
+                "+++ b/beta.ts",
+                "@@ -1,1 +1,1 @@",
+                " const x",
+            ].join("\n");
+
+            const exitCode = await runInDir(diff, tempDir);
+            assertEquals(exitCode, 1);
+
+            const alpha = await Deno.readTextFile(
+                `${tempDir}/alpha.ts`,
+            );
+            assert(alpha.includes("if (a)"));
+
+            const beta = await Deno.readTextFile(
+                `${tempDir}/beta.ts`,
+            );
+            assertEquals(beta, "const x = 1;\n");
+
+            assert(
+                messages.some((m) =>
+                    m.includes("alpha.ts") &&
+                    m.includes("inverted")
+                ),
+            );
+        } finally {
+            console.error = original;
+            await Deno.remove(tempDir, { recursive: true });
+        }
+    },
+);

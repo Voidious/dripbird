@@ -1,4 +1,6 @@
-import { parseDiff } from "./diff.ts";
+import { groupByFile, parseDiff } from "./diff.ts";
+import { runRefactors } from "./engine.ts";
+import { ifNotElse } from "./refactors/if_not_else.ts";
 
 export async function readStream(
     stream: ReadableStream<Uint8Array>,
@@ -17,19 +19,44 @@ export async function readStream(
     return new TextDecoder().decode(merged);
 }
 
-export function run(diff: string): number {
+export async function runInDir(
+    diff: string,
+    baseDir: string,
+): Promise<number> {
     if (!diff.trim()) return 0;
 
     const hunks = parseDiff(diff);
-
     if (hunks.length === 0) return 0;
 
-    console.error(
-        `dripbird: parsed ${hunks.length} hunk(s) across ${
-            new Set(hunks.map((h) => h.file)).size
-        } file(s)`,
-    );
-    console.error("dripbird: no refactors implemented yet");
+    const files = groupByFile(hunks);
+    let anyChanged = false;
 
-    return 0;
+    for (const { file, ranges } of files) {
+        const filePath = `${baseDir}/${file}`;
+        let source: string;
+        try {
+            source = await Deno.readTextFile(filePath);
+        } catch {
+            console.error(
+                `dripbird: skipping ${file}: unable to read`,
+            );
+            continue;
+        }
+
+        const result = runRefactors(source, ranges, [ifNotElse]);
+
+        if (result.changed) {
+            await Deno.writeTextFile(filePath, result.source);
+            console.error(
+                `dripbird: ${file}: ${result.description}`,
+            );
+            anyChanged = true;
+        }
+    }
+
+    return anyChanged ? 1 : 0;
+}
+
+export function run(diff: string): Promise<number> {
+    return runInDir(diff, Deno.cwd());
 }

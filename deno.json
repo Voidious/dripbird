@@ -11,7 +11,7 @@
     "fmt": {
         "lineWidth": 84,
         "indentWidth": 4,
-        "include": ["src/", "tests/"]
+        "include": ["src/", "tests/", "*.md"]
     },
     "lint": {
         "include": ["src/", "tests/"]
@@ -21,6 +21,8 @@
     },
     "exports": "./src/main.ts",
     "imports": {
-        "@std/assert": "jsr:@std/assert@^1.0.19"
+        "@std/assert": "jsr:@std/assert@^1.0.19",
+        "@babel/parser": "npm:@babel/parser@^7.27",
+        "recast": "npm:recast@^0.23"
     }
 }

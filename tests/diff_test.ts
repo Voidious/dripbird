@@ -1,5 +1,5 @@
 import { assertEquals } from "@std/assert";
-import { parseDiff } from "../src/diff.ts";
+import { groupByFile, parseDiff } from "../src/diff.ts";
 
 Deno.test("parseDiff returns empty for empty input", () => {
     assertEquals(parseDiff(""), []);
@@ -9,10 +9,13 @@ Deno.test("parseDiff returns empty for diff with no hunk headers", () => {
     assertEquals(parseDiff("some random text\nmore text"), []);
 });
 
-Deno.test("parseDiff ignores hunk header without preceding file header", () => {
-    const diff = "@@ -1,3 +1,4 @@\n hello\n+world\n";
-    assertEquals(parseDiff(diff), []);
-});
+Deno.test(
+    "parseDiff ignores hunk header without preceding file header",
+    () => {
+        const diff = "@@ -1,3 +1,4 @@\n hello\n+world\n";
+        assertEquals(parseDiff(diff), []);
+    },
+);
 
 Deno.test("parses single file with single hunk", () => {
     const diff = [
@@ -144,4 +147,83 @@ Deno.test("handles realistic git diff output", () => {
     assertEquals(hunks[1].oldCount, 0);
     assertEquals(hunks[1].newStart, 1);
     assertEquals(hunks[1].newCount, 5);
+});
+
+Deno.test("groupByFile groups hunks by file", () => {
+    const hunks = [
+        {
+            file: "a.ts",
+            oldStart: 1,
+            oldCount: 3,
+            newStart: 1,
+            newCount: 3,
+        },
+        {
+            file: "a.ts",
+            oldStart: 10,
+            oldCount: 5,
+            newStart: 10,
+            newCount: 6,
+        },
+        {
+            file: "b.ts",
+            oldStart: 5,
+            oldCount: 2,
+            newStart: 5,
+            newCount: 3,
+        },
+    ];
+    const files = groupByFile(hunks);
+    assertEquals(files.length, 2);
+    assertEquals(files[0].file, "a.ts");
+    assertEquals(files[0].ranges.length, 2);
+    assertEquals(files[0].ranges[0], { start: 1, end: 3 });
+    assertEquals(files[0].ranges[1], { start: 10, end: 15 });
+    assertEquals(files[1].file, "b.ts");
+    assertEquals(files[1].ranges.length, 1);
+});
+
+Deno.test("groupByFile skips /dev/null", () => {
+    const hunks = [
+        {
+            file: "/dev/null",
+            oldStart: 1,
+            oldCount: 1,
+            newStart: 1,
+            newCount: 0,
+        },
+        {
+            file: "a.ts",
+            oldStart: 1,
+            oldCount: 3,
+            newStart: 1,
+            newCount: 3,
+        },
+    ];
+    const files = groupByFile(hunks);
+    assertEquals(files.length, 1);
+    assertEquals(files[0].file, "a.ts");
+});
+
+Deno.test("groupByFile skips hunks with newCount 0", () => {
+    const hunks = [
+        {
+            file: "a.ts",
+            oldStart: 1,
+            oldCount: 3,
+            newStart: 1,
+            newCount: 0,
+        },
+        {
+            file: "a.ts",
+            oldStart: 5,
+            oldCount: 2,
+            newStart: 5,
+            newCount: 2,
+        },
+    ];
+    const files = groupByFile(hunks);
+    assertEquals(files.length, 1);
+    assertEquals(files[0].ranges.length, 1);
+    assertEquals(files[0].ranges[0], { start: 5, end: 6 });
 });
