@@ -1,0 +1,21 @@
+{
+    "name": "@pcupka/dripbird",
+    "version": "0.1.0",
+    "tasks": {
+        "fmt": "deno fmt",
+        "fmt:check": "deno fmt --check",
+        "lint": "deno lint"
+    },
+    "fmt": {
+        "lineWidth": 84,
+        "indentWidth": 4,
+        "include": ["src/", "tests/"]
+    },
+    "lint": {
+        "include": ["src/", "tests/"]
+    },
+    "compilerOptions": {
+        "strict": true
+    },
+    "exports": "./src/main.ts"
+}

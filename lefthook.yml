@@ -1,0 +1,8 @@
+pre-commit:
+    commands:
+        fmt:
+            run: deno fmt --check {staged_files}
+            glob: "*.{ts,js,md,json}"
+        lint:
+            run: deno lint {staged_files}
+            glob: "*.{ts,js}"
