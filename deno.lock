@@ -4,6 +4,7 @@
     "jsr:@std/assert@*": "1.0.19",
     "jsr:@std/assert@^1.0.19": "1.0.19",
     "jsr:@std/internal@^1.0.12": "1.0.12",
+    "jsr:@std/yaml@1": "1.0.12",
     "npm:@babel/parser@^7.27.0": "7.29.2",
     "npm:recast@0.23": "0.23.11"
   },
@@ -16,6 +17,9 @@
     },
     "@std/internal@1.0.12": {
       "integrity": "972a634fd5bc34b242024402972cd5143eac68d8dffaca5eaa4dba30ce17b027"
+    },
+    "@std/yaml@1.0.12": {
+      "integrity": "7deabca4545bcedd07c5f69ea53acea71b8b4c67562f224e17b90d75944cb20c"
     }
   },
   "npm": {
@@ -72,6 +76,7 @@
   "workspace": {
     "dependencies": [
       "jsr:@std/assert@^1.0.19",
+      "jsr:@std/yaml@1",
       "npm:@babel/parser@^7.27.0",
       "npm:recast@0.23"
     ]

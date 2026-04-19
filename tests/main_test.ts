@@ -196,3 +196,35 @@ Deno.test(
         }
     },
 );
+
+Deno.test(
+    "runInDir works without LLM (no API key)",
+    async () => {
+        const tempDir = await Deno.makeTempDir();
+        const filePath = `${tempDir}/test.ts`;
+        await Deno.writeTextFile(
+            filePath,
+            "if (!a) {\n    b();\n} else {\n    c();\n}\n",
+        );
+
+        const original = Deno.env.get("MOONSHOT_API_KEY");
+        Deno.env.delete("MOONSHOT_API_KEY");
+        try {
+            const diff = [
+                "--- a/test.ts",
+                "+++ b/test.ts",
+                "@@ -1,5 +1,5 @@",
+                " if (!a) {",
+            ].join("\n");
+
+            const exitCode = await runInDir(diff, tempDir);
+            assertEquals(exitCode, 1);
+
+            const modified = await Deno.readTextFile(filePath);
+            assert(modified.includes("if (a)"));
+        } finally {
+            if (original) Deno.env.set("MOONSHOT_API_KEY", original);
+            await Deno.remove(tempDir, { recursive: true });
+        }
+    },
+);

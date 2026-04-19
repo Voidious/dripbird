@@ -9,19 +9,19 @@ export interface RefactorResult {
 export type Refactor = (
     source: string,
     ranges: ChangedRange[],
-) => RefactorResult;
+) => RefactorResult | Promise<RefactorResult>;
 
-export function runRefactors(
+export async function runRefactors(
     source: string,
     ranges: ChangedRange[],
     refactors: Refactor[],
-): RefactorResult {
+): Promise<RefactorResult> {
     let current = source;
     let anyChanged = false;
     const descriptions: string[] = [];
 
     for (const refactor of refactors) {
-        const result = refactor(current, ranges);
+        const result = await refactor(current, ranges);
         if (result.changed) {
             current = result.source;
             anyChanged = true;

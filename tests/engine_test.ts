@@ -16,27 +16,29 @@ const changeRefactor: Refactor = (source, _ranges) => ({
 
 Deno.test(
     "runRefactors returns unchanged when no refactors apply",
-    () => {
-        const result = runRefactors("old code", [], [noChangeRefactor]);
+    async () => {
+        const result = await runRefactors("old code", [], [
+            noChangeRefactor,
+        ]);
         assertEquals(result.changed, false);
         assertEquals(result.source, "old code");
     },
 );
 
-Deno.test("runRefactors applies a single refactor", () => {
-    const result = runRefactors("old code", [], [changeRefactor]);
+Deno.test("runRefactors applies a single refactor", async () => {
+    const result = await runRefactors("old code", [], [changeRefactor]);
     assertEquals(result.changed, true);
     assertEquals(result.source, "new code");
     assertEquals(result.description, "changed something");
 });
 
-Deno.test("runRefactors chains multiple refactors", () => {
+Deno.test("runRefactors chains multiple refactors", async () => {
     const upperRefactor: Refactor = (source, _ranges) => ({
         changed: true,
         source: source.toUpperCase(),
         description: "uppercased",
     });
-    const result = runRefactors("old code", [], [
+    const result = await runRefactors("old code", [], [
         changeRefactor,
         upperRefactor,
     ]);
@@ -47,9 +49,22 @@ Deno.test("runRefactors chains multiple refactors", () => {
 
 Deno.test(
     "runRefactors with empty refactors list returns unchanged",
-    () => {
-        const result = runRefactors("code", [], []);
+    async () => {
+        const result = await runRefactors("code", [], []);
         assertEquals(result.changed, false);
         assertEquals(result.source, "code");
     },
 );
+
+Deno.test("runRefactors handles async refactors", async () => {
+    // deno-lint-ignore require-await
+    const asyncRefactor: Refactor = async (source, _ranges) => ({
+        changed: true,
+        source: source.replace("old", "async"),
+        description: "async change",
+    });
+    const result = await runRefactors("old code", [], [asyncRefactor]);
+    assertEquals(result.changed, true);
+    assertEquals(result.source, "async code");
+    assertEquals(result.description, "async change");
+});

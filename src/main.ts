@@ -1,6 +1,10 @@
 import { groupByFile, parseDiff } from "./diff.ts";
 import { runRefactors } from "./engine.ts";
+import { loadConfig } from "./config.ts";
+import { createLLMClient } from "./llm.ts";
 import { ifNotElse } from "./refactors/if_not_else.ts";
+import { createFunctionSplitter } from "./refactors/function_splitter.ts";
+import type { LLMOptions } from "./llm.ts";
 
 export async function readStream(
     stream: ReadableStream<Uint8Array>,
@@ -22,11 +26,21 @@ export async function readStream(
 export async function runInDir(
     diff: string,
     baseDir: string,
+    llmOptions?: LLMOptions,
 ): Promise<number> {
     if (!diff.trim()) return 0;
 
     const hunks = parseDiff(diff);
     if (hunks.length === 0) return 0;
+
+    const config = loadConfig(baseDir);
+
+    const refactors = [ifNotElse];
+
+    const llm = createLLMClient(config, llmOptions);
+    if (llm) {
+        refactors.push(createFunctionSplitter(config, llm));
+    }
 
     const files = groupByFile(hunks);
     let anyChanged = false;
@@ -43,7 +57,7 @@ export async function runInDir(
             continue;
         }
 
-        const result = runRefactors(source, ranges, [ifNotElse]);
+        const result = await runRefactors(source, ranges, refactors);
 
         if (result.changed) {
             await Deno.writeTextFile(filePath, result.source);
