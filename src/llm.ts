@@ -42,7 +42,7 @@ export class MoonshotClient implements LLMClient {
             {
                 role: "system",
                 content:
-                    "Given a code context and parameter names, suggest a concise function name in camelCase. Reply with ONLY the function name, nothing else.",
+                    "Suggest a concise camelCase function name for code with the given context and parameters. Reply with ONLY the function name.",
             },
             {
                 role: "user",
@@ -64,7 +64,7 @@ export class MoonshotClient implements LLMClient {
                     model: this.model,
                     messages,
                     temperature: 1,
-                    max_tokens: 300,
+                    max_tokens: 3000,
                 }),
             },
         );
