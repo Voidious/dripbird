@@ -80,6 +80,8 @@ Deno.test("createLLMClient returns null without API key", () => {
             max_function_lines: 75,
             provider: "moonshot",
             model: "kimi-k2.5",
+            enabled_refactors: [],
+            disabled_refactors: [],
         };
         const client = createLLMClient(config);
         assertEquals(client, null);
@@ -97,6 +99,8 @@ Deno.test("createLLMClient uses env var API key", () => {
             max_function_lines: 75,
             provider: "moonshot",
             model: "kimi-k2.5",
+            enabled_refactors: [],
+            disabled_refactors: [],
         };
         const client = createLLMClient(config);
         assert(client instanceof MoonshotClient);
@@ -117,6 +121,8 @@ Deno.test("createLLMClient uses options API key over env", () => {
             max_function_lines: 75,
             provider: "moonshot",
             model: "kimi-k2.5",
+            enabled_refactors: [],
+            disabled_refactors: [],
         };
         const client = createLLMClient(config, {
             apiKey: "options-key",
@@ -136,6 +142,8 @@ Deno.test("createLLMClient passes custom fetchFn", async () => {
         max_function_lines: 75,
         provider: "moonshot",
         model: "test-model",
+        enabled_refactors: [],
+        disabled_refactors: [],
     };
     const client = createLLMClient(config, {
         apiKey: "key",

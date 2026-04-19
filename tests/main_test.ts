@@ -228,3 +228,38 @@ Deno.test(
         }
     },
 );
+
+Deno.test(
+    "runInDir respects enabled_refactors to skip a refactor",
+    async () => {
+        const tempDir = await Deno.makeTempDir();
+        const filePath = `${tempDir}/test.ts`;
+        const original = "if (!a) {\n    b();\n} else {\n    c();\n}\n";
+        await Deno.writeTextFile(filePath, original);
+
+        Deno.writeTextFileSync(
+            `${tempDir}/dripbird.yml`,
+            "enabled_refactors: []\ndisabled_refactors:\n  - if_not_else\n",
+        );
+
+        const originalEnv = Deno.env.get("MOONSHOT_API_KEY");
+        Deno.env.delete("MOONSHOT_API_KEY");
+        try {
+            const diff = [
+                "--- a/test.ts",
+                "+++ b/test.ts",
+                "@@ -1,5 +1,5 @@",
+                " if (!a) {",
+            ].join("\n");
+
+            const exitCode = await runInDir(diff, tempDir);
+            assertEquals(exitCode, 0);
+
+            const content = await Deno.readTextFile(filePath);
+            assertEquals(content, original);
+        } finally {
+            if (originalEnv) Deno.env.set("MOONSHOT_API_KEY", originalEnv);
+            await Deno.remove(tempDir, { recursive: true });
+        }
+    },
+);

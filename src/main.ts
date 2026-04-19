@@ -1,6 +1,7 @@
 import { groupByFile, parseDiff } from "./diff.ts";
 import { runRefactors } from "./engine.ts";
-import { loadConfig } from "./config.ts";
+import { filterRefactors, loadConfig } from "./config.ts";
+import type { NamedRefactor } from "./config.ts";
 import { createLLMClient } from "./llm.ts";
 import { ifNotElse } from "./refactors/if_not_else.ts";
 import { createFunctionSplitter } from "./refactors/function_splitter.ts";
@@ -35,12 +36,19 @@ export async function runInDir(
 
     const config = loadConfig(baseDir);
 
-    const refactors = [ifNotElse];
+    const namedRefactors: NamedRefactor[] = [
+        { name: "if_not_else", refactor: ifNotElse },
+    ];
 
     const llm = createLLMClient(config, llmOptions);
     if (llm) {
-        refactors.push(createFunctionSplitter(config, llm));
+        namedRefactors.push({
+            name: "function_splitter",
+            refactor: createFunctionSplitter(config, llm),
+        });
     }
+
+    const refactors = filterRefactors(namedRefactors, config);
 
     const files = groupByFile(hunks);
     let anyChanged = false;

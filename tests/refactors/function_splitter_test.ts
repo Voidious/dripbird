@@ -39,6 +39,8 @@ const defaultConfig = {
     max_function_lines: 10,
     provider: "moonshot",
     model: "kimi-k2.5",
+    enabled_refactors: [],
+    disabled_refactors: [],
 };
 
 function fixedRandom(values: number[]): () => number {

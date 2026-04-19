@@ -1,0 +1,18 @@
+# dripbird configuration
+# override locally with .dripbird.yml
+
+# maximum lines before a function is considered for splitting
+max_function_lines: 75
+
+# LLM provider ("moonshot" or "openai")
+provider: moonshot
+
+# LLM model name
+model: kimi-k2.5
+
+# only run these refactors (empty = all enabled)
+# available: if_not_else, function_splitter
+enabled_refactors: []
+
+# exclude these refactors (empty = none disabled)
+disabled_refactors: []
