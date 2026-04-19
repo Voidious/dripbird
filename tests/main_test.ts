@@ -190,6 +190,14 @@ Deno.test(
                     m.includes("inverted")
                 ),
             );
+            assert(
+                messages.some((m) =>
+                    m.includes("provider=moonshot") &&
+                    m.includes("model=kimi-k2.5") &&
+                    m.includes("max_function_lines=75") &&
+                    m.includes("function_splitter_retries=2")
+                ),
+            );
         } finally {
             console.error = original;
             await Deno.remove(tempDir, { recursive: true });
@@ -258,6 +266,82 @@ Deno.test(
             const content = await Deno.readTextFile(filePath);
             assertEquals(content, original);
         } finally {
+            if (originalEnv) Deno.env.set("MOONSHOT_API_KEY", original);
+            await Deno.remove(tempDir, { recursive: true });
+        }
+    },
+);
+
+Deno.test(
+    "runInDir does not print config summary when no changes are made",
+    async () => {
+        const tempDir = await Deno.makeTempDir();
+        const filePath = `${tempDir}/test.ts`;
+        const original = "const x = 1;\nconsole.log(x);\n";
+        await Deno.writeTextFile(filePath, original);
+
+        const messages: string[] = [];
+        const orig = console.error;
+        console.error = (...args: unknown[]) => messages.push(args.join(" "));
+
+        try {
+            const diff = [
+                "--- a/test.ts",
+                "+++ b/test.ts",
+                "@@ -1,2 +1,2 @@",
+                " const x = 1;",
+            ].join("\n");
+
+            const exitCode = await runInDir(diff, tempDir);
+            assertEquals(exitCode, 0);
+            assertEquals(messages.length, 0);
+        } finally {
+            console.error = orig;
+            await Deno.remove(tempDir, { recursive: true });
+        }
+    },
+);
+
+Deno.test(
+    "runInDir config summary reflects dripbird.yml values",
+    async () => {
+        const tempDir = await Deno.makeTempDir();
+        const filePath = `${tempDir}/test.ts`;
+        await Deno.writeTextFile(
+            filePath,
+            "if (!a) {\n    b();\n} else {\n    c();\n}\n",
+        );
+
+        Deno.writeTextFileSync(
+            `${tempDir}/dripbird.yml`,
+            "max_function_lines: 30\nprovider: openai\nmodel: gpt-4\nfunction_splitter_retries: 5\n",
+        );
+
+        const messages: string[] = [];
+        const orig = console.error;
+        console.error = (...args: unknown[]) => messages.push(args.join(" "));
+
+        const originalEnv = Deno.env.get("MOONSHOT_API_KEY");
+        Deno.env.delete("MOONSHOT_API_KEY");
+        try {
+            const diff = [
+                "--- a/test.ts",
+                "+++ b/test.ts",
+                "@@ -1,5 +1,5 @@",
+                " if (!a) {",
+            ].join("\n");
+
+            const exitCode = await runInDir(diff, tempDir);
+            assertEquals(exitCode, 1);
+
+            const summary = messages.find((m) => m.includes("provider="));
+            assert(summary);
+            assert(summary.includes("provider=openai"));
+            assert(summary.includes("model=gpt-4"));
+            assert(summary.includes("max_function_lines=30"));
+            assert(summary.includes("function_splitter_retries=5"));
+        } finally {
+            console.error = orig;
             if (originalEnv) Deno.env.set("MOONSHOT_API_KEY", originalEnv);
             await Deno.remove(tempDir, { recursive: true });
         }

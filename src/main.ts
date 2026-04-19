@@ -52,6 +52,7 @@ export async function runInDir(
 
     const files = groupByFile(hunks);
     let anyChanged = false;
+    let configPrinted = false;
 
     for (const { file, ranges } of files) {
         const filePath = `${baseDir}/${file}`;
@@ -68,6 +69,12 @@ export async function runInDir(
         const result = await runRefactors(source, ranges, refactors);
 
         if (result.changed) {
+            if (!configPrinted) {
+                console.error(
+                    `dripbird: provider=${config.provider} model=${config.model} max_function_lines=${config.max_function_lines} function_splitter_retries=${config.function_splitter_retries}`,
+                );
+                configPrinted = true;
+            }
             await Deno.writeTextFile(filePath, result.source);
             console.error(
                 `dripbird: ${file}: ${result.description}`,
