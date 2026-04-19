@@ -7,7 +7,7 @@
         "lint": "deno lint",
         "test": "deno test --allow-all",
         "test:coverage": "scripts/check_coverage.sh",
-        "install": "deno install --global --allow-read --allow-write --allow-env --config deno.json -n dripbird src/cli.ts"
+        "install": "deno install --global --allow-read --allow-write --allow-env --allow-net --config deno.json -n dripbird -f src/cli.ts"
     },
     "fmt": {
         "lineWidth": 84,
