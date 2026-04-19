@@ -279,6 +279,124 @@ export function getTailCode(
     return source.split("\n").slice(startLine - 1, endLine).join("\n");
 }
 
+const JS_TS_KEYWORDS = new Set([
+    "abstract",
+    "any",
+    "as",
+    "asserts",
+    "async",
+    "await",
+    "bigint",
+    "boolean",
+    "break",
+    "case",
+    "catch",
+    "class",
+    "const",
+    "constructor",
+    "continue",
+    "debugger",
+    "declare",
+    "default",
+    "delete",
+    "do",
+    "else",
+    "enum",
+    "export",
+    "extends",
+    "false",
+    "finally",
+    "for",
+    "from",
+    "function",
+    "get",
+    "if",
+    "implements",
+    "import",
+    "in",
+    "infer",
+    "instanceof",
+    "interface",
+    "is",
+    "keyof",
+    "let",
+    "module",
+    "namespace",
+    "never",
+    "new",
+    "null",
+    "number",
+    "object",
+    "out",
+    "override",
+    "package",
+    "private",
+    "protected",
+    "public",
+    "readonly",
+    "require",
+    "return",
+    "set",
+    "static",
+    "string",
+    "super",
+    "switch",
+    "symbol",
+    "this",
+    "throw",
+    "true",
+    "try",
+    "type",
+    "typeof",
+    "undefined",
+    "unique",
+    "unknown",
+    "var",
+    "void",
+    "while",
+    "with",
+    "yield",
+]);
+
+export function collectFileLevelBindings(ast: any): Set<string> {
+    const bindings = new Set<string>();
+    for (const node of ast.program.body) {
+        switch (node.type) {
+            case "FunctionDeclaration":
+                if (node.id) bindings.add(node.id.name);
+                break;
+            case "ClassDeclaration":
+                if (node.id) bindings.add(node.id.name);
+                break;
+            case "VariableDeclaration":
+                for (const decl of node.declarations) {
+                    collectPatternBindings(decl.id, bindings);
+                }
+                break;
+            case "ImportDeclaration":
+                for (const spec of node.specifiers) {
+                    bindings.add(spec.local.name);
+                }
+                break;
+            case "TSTypeAliasDeclaration":
+                bindings.add(node.id.name);
+                break;
+            case "TSInterfaceDeclaration":
+                bindings.add(node.id.name);
+                break;
+            case "TSEnumDeclaration":
+                bindings.add(node.id.name);
+                break;
+            case "TSModuleDeclaration":
+                if (node.id?.type === "Identifier") {
+                    bindings.add(node.id.name);
+                }
+                break;
+        }
+    }
+    return bindings;
+}
+
 export function createFunctionSplitter(
     config: Config,
     llm: LLMClient,
@@ -410,6 +528,7 @@ export function createFunctionSplitter(
         );
 
         const descriptions: string[] = [];
+        const fileBindings = collectFileLevelBindings(ast);
 
         for (const candidate of candidates) {
             const {
@@ -456,6 +575,14 @@ export function createFunctionSplitter(
             const tail = bodyStatements.slice(best.splitIndex);
 
             const tailCode = getTailCode(source, tail, node);
+            const funcBindings = collectAllBindings(bodyStatements);
+            const forbiddenNames = new Set([
+                ...fileBindings,
+                ...funcBindings,
+                ...originalParams,
+                ...JS_TS_KEYWORDS,
+            ]);
+            const forbiddenList = Array.from(forbiddenNames).sort();
             const maxAttempts = config.function_splitter_retries + 1;
             let helperName = "";
             for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -463,12 +590,19 @@ export function createFunctionSplitter(
                     helperName = await llm.nameFunction(
                         tailCode,
                         best.params,
+                        forbiddenList,
                     );
-                    break;
                 } catch {
                     if (attempt === maxAttempts - 1) {
                         return { changed: false, source, description: "" };
                     }
+                    continue;
+                }
+                if (!forbiddenNames.has(helperName)) {
+                    break;
+                }
+                if (attempt === maxAttempts - 1) {
+                    return { changed: false, source, description: "" };
                 }
             }
 
@@ -544,6 +678,7 @@ export function createFunctionSplitter(
             descriptions.push(
                 `split function at line ${node.loc.start.line} into ${helperName}`,
             );
+            fileBindings.add(helperName);
         }
 
         if (descriptions.length === 0) {

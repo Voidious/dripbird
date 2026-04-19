@@ -186,3 +186,49 @@ Deno.test("MoonshotClient throws on unexpected response shape", async () => {
         "Unexpected LLM response",
     );
 });
+
+Deno.test("MoonshotClient includes forbidden names in prompt", async () => {
+    const captured: { req: Request | null } = { req: null };
+    const fetchFn = ((input: RequestInfo | URL, init?: RequestInit) => {
+        captured.req = new Request(input as URL, init);
+        return Promise.resolve(
+            new Response(
+                JSON.stringify({
+                    choices: [
+                        { message: { content: "goodName" } },
+                    ],
+                }),
+            ),
+        );
+    }) as unknown as typeof fetch;
+
+    const client = new MoonshotClient("key", "test-model", fetchFn);
+    await client.nameFunction("ctx", ["a"], ["forbidden1", "forbidden2"]);
+
+    const body = await captured.req!.json();
+    assert(body.messages[1].content.includes("Forbidden names"));
+    assert(body.messages[1].content.includes("forbidden1"));
+    assert(body.messages[1].content.includes("forbidden2"));
+});
+
+Deno.test("MoonshotClient omits forbidden names when not provided", async () => {
+    const captured: { req: Request | null } = { req: null };
+    const fetchFn = ((input: RequestInfo | URL, init?: RequestInit) => {
+        captured.req = new Request(input as URL, init);
+        return Promise.resolve(
+            new Response(
+                JSON.stringify({
+                    choices: [
+                        { message: { content: "goodName" } },
+                    ],
+                }),
+            ),
+        );
+    }) as unknown as typeof fetch;
+
+    const client = new MoonshotClient("key", "test-model", fetchFn);
+    await client.nameFunction("ctx", ["a"]);
+
+    const body = await captured.req!.json();
+    assert(!body.messages[1].content.includes("Forbidden names"));
+});

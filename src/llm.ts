@@ -4,6 +4,7 @@ export interface LLMClient {
     nameFunction(
         context: string,
         params: string[],
+        forbiddenNames?: string[],
     ): Promise<string>;
 }
 
@@ -37,7 +38,11 @@ export class MoonshotClient implements LLMClient {
     async nameFunction(
         context: string,
         params: string[],
+        forbiddenNames?: string[],
     ): Promise<string> {
+        const forbiddenSection = forbiddenNames?.length
+            ? `\n\nForbidden names (do NOT use these): ${forbiddenNames.join(", ")}`
+            : "";
         const messages: ChatMessage[] = [
             {
                 role: "system",
@@ -48,7 +53,7 @@ export class MoonshotClient implements LLMClient {
                 role: "user",
                 content: `Context:\n${context}\n\nParameters: ${
                     params.join(", ")
-                }\n\nSuggest a function name:`,
+                }${forbiddenSection}\n\nSuggest a function name:`,
             },
         ];
 

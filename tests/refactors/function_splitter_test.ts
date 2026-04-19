@@ -2,6 +2,7 @@
 import { assert, assertEquals } from "@std/assert";
 import {
     collectAllBindings,
+    collectFileLevelBindings,
     collectIdentifiers,
     collectPatternBindings,
     createFunctionSplitter,
@@ -1010,9 +1011,17 @@ Deno.test("function splitter with multiple candidates processes all", async () =
     }\n    return a19;\n}\n\nfunction second(x, y) {\n${
         lines2.join("\n")
     }\n    return b19;\n}\n`;
+    let callCount = 0;
+    const llm: LLMClient = {
+        // deno-lint-ignore require-await
+        async nameFunction(_ctx: string, _params: string[]) {
+            callCount++;
+            return `helper${callCount}`;
+        },
+    };
     const splitter = createFunctionSplitter(
         defaultConfig,
-        mockLLM("helper"),
+        llm,
         fixedRandom([0]),
     );
     const result = await splitter(source, [
@@ -1020,7 +1029,8 @@ Deno.test("function splitter with multiple candidates processes all", async () =
         { start: 25, end: 47 },
     ]);
     assertEquals(result.changed, true);
-    assert(result.source.includes("helper"));
+    assert(result.source.includes("helper1"));
+    assert(result.source.includes("helper2"));
 });
 
 Deno.test("function splitter skips trivial tail that just returns a variable", async () => {
@@ -1071,4 +1081,184 @@ Deno.test("function splitter handles class expression in body", async () => {
     );
     const result = await splitter(source, [{ start: 1, end: 15 }]);
     assertEquals(result.changed, true);
+});
+
+Deno.test("collectFileLevelBindings collects function and class declarations", () => {
+    const stmts = parseStmts(
+        "function foo() {}\nclass Bar {}\nconst x = 1;\nlet y = 2;\nvar z = 3;",
+    );
+    const ast = { program: { body: stmts } };
+    const bindings = collectFileLevelBindings(ast);
+    assertEquals(bindings.has("foo"), true);
+    assertEquals(bindings.has("Bar"), true);
+    assertEquals(bindings.has("x"), true);
+    assertEquals(bindings.has("y"), true);
+    assertEquals(bindings.has("z"), true);
+});
+
+Deno.test("collectFileLevelBindings collects import bindings", () => {
+    const stmts = parseStmts(
+        'import Default from "mod";\nimport { Foo, Bar as Baz } from "mod2";\nimport * as NS from "mod3";',
+    );
+    const ast = { program: { body: stmts } };
+    const bindings = collectFileLevelBindings(ast);
+    assertEquals(bindings.has("Default"), true);
+    assertEquals(bindings.has("Foo"), true);
+    assertEquals(bindings.has("Baz"), true);
+    assertEquals(bindings.has("NS"), true);
+});
+
+Deno.test("collectFileLevelBindings collects TS type declarations", () => {
+    const stmts = parseStmts(
+        "type MyType = string;\ninterface MyInterface {}\nenum MyEnum { A, B }",
+    );
+    const ast = { program: { body: stmts } };
+    const bindings = collectFileLevelBindings(ast);
+    assertEquals(bindings.has("MyType"), true);
+    assertEquals(bindings.has("MyInterface"), true);
+    assertEquals(bindings.has("MyEnum"), true);
+});
+
+Deno.test("collectFileLevelBindings collects TS module declarations", () => {
+    const stmts = parseStmts("module MyModule {}");
+    const ast = { program: { body: stmts } };
+    const bindings = collectFileLevelBindings(ast);
+    assertEquals(bindings.has("MyModule"), true);
+});
+
+Deno.test("function splitter rejects forbidden name and retries", async () => {
+    const lines = [];
+    for (let i = 0; i < 20; i++) {
+        lines.push(`    const v${i} = ${i};`);
+    }
+    const source =
+        `function existingFunc() { return 1; }\n\nfunction longFunc(a, b) {\n${
+            lines.join("\n")
+        }\n    return v19;\n}\n`;
+    let callCount = 0;
+    const llm: LLMClient = {
+        // deno-lint-ignore require-await
+        async nameFunction(_ctx: string, _params: string[], _forbidden?: string[]) {
+            callCount++;
+            if (callCount === 1) return "existingFunc";
+            return "goodHelper";
+        },
+    };
+    const splitter = createFunctionSplitter(
+        defaultConfig,
+        llm,
+        fixedRandom([0]),
+    );
+    const result = await splitter(source, [{ start: 3, end: 25 }]);
+    assertEquals(result.changed, true);
+    assertEquals(callCount, 2);
+    assert(result.source.includes("goodHelper"));
+    assert(result.source.includes("function existingFunc"));
+    assert(result.source.includes("function longFunc"));
+});
+
+Deno.test("function splitter rejects keyword name and retries", async () => {
+    const lines = [];
+    for (let i = 0; i < 20; i++) {
+        lines.push(`    const v${i} = ${i};`);
+    }
+    const source = `function longFunc(a, b) {\n${
+        lines.join("\n")
+    }\n    return v19;\n}\n`;
+    let callCount = 0;
+    const llm: LLMClient = {
+        // deno-lint-ignore require-await
+        async nameFunction(_ctx: string, _params: string[], _forbidden?: string[]) {
+            callCount++;
+            if (callCount === 1) return "return";
+            return "validName";
+        },
+    };
+    const splitter = createFunctionSplitter(
+        defaultConfig,
+        llm,
+        fixedRandom([0]),
+    );
+    const result = await splitter(source, [{ start: 1, end: 23 }]);
+    assertEquals(result.changed, true);
+    assertEquals(callCount, 2);
+    assert(result.source.includes("validName"));
+});
+
+Deno.test("function splitter rejects function-scoped variable name", async () => {
+    const lines = [];
+    for (let i = 0; i < 20; i++) {
+        lines.push(`    const v${i} = ${i};`);
+    }
+    const source = `function longFunc(a, b) {\n${
+        lines.join("\n")
+    }\n    return v19;\n}\n`;
+    let callCount = 0;
+    const llm: LLMClient = {
+        // deno-lint-ignore require-await
+        async nameFunction(_ctx: string, _params: string[], _forbidden?: string[]) {
+            callCount++;
+            if (callCount === 1) return "v5";
+            return "computeResult";
+        },
+    };
+    const splitter = createFunctionSplitter(
+        defaultConfig,
+        llm,
+        fixedRandom([0]),
+    );
+    const result = await splitter(source, [{ start: 1, end: 23 }]);
+    assertEquals(result.changed, true);
+    assertEquals(callCount, 2);
+    assert(result.source.includes("computeResult"));
+});
+
+Deno.test("function splitter gives up when all attempts return forbidden names", async () => {
+    const lines = [];
+    for (let i = 0; i < 20; i++) {
+        lines.push(`    const v${i} = ${i};`);
+    }
+    const source = `function longFunc(a, b) {\n${
+        lines.join("\n")
+    }\n    return v19;\n}\n`;
+    let callCount = 0;
+    const llm: LLMClient = {
+        // deno-lint-ignore require-await
+        async nameFunction(_ctx: string, _params: string[], _forbidden?: string[]) {
+            callCount++;
+            return "v5";
+        },
+    };
+    const splitter = createFunctionSplitter(
+        defaultConfig,
+        llm,
+        fixedRandom([0]),
+    );
+    const result = await splitter(source, [{ start: 1, end: 23 }]);
+    assertEquals(result.changed, false);
+    assertEquals(callCount, 3);
+});
+
+Deno.test("function splitter passes forbidden names to LLM", async () => {
+    const source =
+        `import { foo } from "mod";\n\nfunction longFunc(a, b) {\n    const c = a + b;\n    const d = c * 2;\n    const e = d + a;\n    const f = e + b;\n    const g = f + a;\n    const h = g + b;\n    const i = h + a;\n    const j = i + b;\n    const k = j + a;\n    const l = k + b;\n    const m = l + a;\n    const n = m + b;\n    return n;\n}\n`;
+    let capturedForbidden: string[] | undefined;
+    const llm: LLMClient = {
+        // deno-lint-ignore require-await
+        async nameFunction(_ctx: string, _params: string[], forbidden?: string[]) {
+            capturedForbidden = forbidden;
+            return "helper";
+        },
+    };
+    const splitter = createFunctionSplitter(
+        defaultConfig,
+        llm,
+        fixedRandom([0]),
+    );
+    await splitter(source, [{ start: 3, end: 17 }]);
+    assert(capturedForbidden!.includes("foo"));
+    assert(capturedForbidden!.includes("longFunc"));
+    assert(capturedForbidden!.includes("return"));
+    assert(capturedForbidden!.includes("c"));
+    assert(capturedForbidden!.includes("a"));
 });
