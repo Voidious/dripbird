@@ -1,6 +1,6 @@
-# Dripbird
+# dripbird
 
-Dripbird is a TypeScript/JavaScript automated refactoring tool. It reads a unified
+dripbird is a TypeScript/JavaScript automated refactoring tool. It reads a unified
 diff from stdin, identifies changed lines, applies a set of automated refactors only
 to the changed regions, and writes modified files back in place.
 
@@ -13,11 +13,11 @@ transformations.
 git diff --cached HEAD~1 | dripbird
 ```
 
-Dripbird operates only on the lines you actually changed — not the whole file. Each
+dripbird operates only on the lines you actually changed — not the whole file. Each
 refactor receives the diff's line ranges and skips code outside those ranges. This
 makes it safe to run on any in-progress change without disturbing surrounding code.
 
-If Dripbird modifies a file, it exits with code 1 (signaling a pre-commit hook to
+If dripbird modifies a file, it exits with code 1 (signaling a pre-commit hook to
 abort so you can re-stage). If no changes are needed, it exits 0.
 
 ## Installation
@@ -58,7 +58,7 @@ exits 1 if any file was changed.
 **Flips `if (!condition) { ... } else { ... }` to eliminate the negation.**
 
 When an `if` has a negated condition (`!`) and an `else` clause that is not an
-`else if`, Dripbird removes the `!` and swaps the two branches. This eliminates a
+`else if`, dripbird removes the `!` and swaps the two branches. This eliminates a
 layer of logical indirection and makes intent clearer.
 
 **Before:**
