@@ -5,7 +5,9 @@ import {
     collectFileLevelBindings,
     collectIdentifiers,
     collectPatternBindings,
+    computeDiffCoverage,
     createFunctionSplitter,
+    getDiffStatementRange,
     getParamName,
     getTailCode,
 } from "../../src/refactors/function_splitter.ts";
@@ -1261,4 +1263,135 @@ Deno.test("function splitter passes forbidden names to LLM", async () => {
     assert(capturedForbidden!.includes("return"));
     assert(capturedForbidden!.includes("c"));
     assert(capturedForbidden!.includes("a"));
+});
+
+Deno.test("computeDiffCoverage returns 1 for full coverage", () => {
+    assertEquals(computeDiffCoverage(1, 20, [{ start: 1, end: 20 }]), 1);
+});
+
+Deno.test("computeDiffCoverage returns 0 for no overlap", () => {
+    assertEquals(computeDiffCoverage(1, 20, [{ start: 30, end: 40 }]), 0);
+});
+
+Deno.test("computeDiffCoverage returns partial coverage", () => {
+    assertEquals(computeDiffCoverage(1, 20, [{ start: 11, end: 20 }]), 0.5);
+});
+
+Deno.test("computeDiffCoverage handles multiple ranges", () => {
+    const coverage = computeDiffCoverage(1, 20, [
+        { start: 1, end: 5 },
+        { start: 16, end: 20 },
+    ]);
+    assertEquals(coverage, 0.5);
+});
+
+Deno.test("computeDiffCoverage clamps ranges to function bounds", () => {
+    assertEquals(computeDiffCoverage(5, 15, [{ start: 1, end: 30 }]), 1);
+});
+
+Deno.test("computeDiffCoverage returns 0 for inverted line range", () => {
+    assertEquals(computeDiffCoverage(10, 5, [{ start: 1, end: 20 }]), 0);
+});
+
+Deno.test("getDiffStatementRange skips statements without loc", () => {
+    const stmts = [{ loc: null }, {
+        loc: { start: { line: 5 }, end: { line: 5 } },
+    }];
+    const result = getDiffStatementRange(stmts as any, [{ start: 1, end: 10 }]);
+    assertEquals(result, { first: 1, last: 1 });
+});
+
+Deno.test("function splitter with low coverage restricts split to diff", async () => {
+    const source = `function longFunc(a, b) {
+    const c = a + b;
+    const d = c * 2;
+    const e = d + a;
+    const f = e + b;
+    const g = f + a;
+    const h = g + b;
+    const i = h + a;
+    const j = i + b;
+    const k = j + a;
+    const l = k + b;
+    return l;
+}
+`;
+    let capturedParams: string[] = [];
+    const llm: LLMClient = {
+        // deno-lint-ignore require-await
+        async nameFunction(_ctx: string, params: string[]) {
+            capturedParams = params;
+            return "helper";
+        },
+    };
+    const splitter = createFunctionSplitter(
+        defaultConfig,
+        llm,
+        fixedRandom([0]),
+    );
+    const result = await splitter(source, [{ start: 11, end: 13 }]);
+    assertEquals(result.changed, true);
+    assert(capturedParams.includes("k"));
+    assertEquals(capturedParams.includes("c"), false);
+});
+
+Deno.test("function splitter with low coverage skips when diff not in body", async () => {
+    const lines = [];
+    for (let i = 0; i < 15; i++) {
+        lines.push(`    const v${i} = ${i};`);
+    }
+    const source = `function longFunc(a, b) {\n${
+        lines.join("\n")
+    }\n    return v14;\n}\n`;
+    const splitter = createFunctionSplitter(
+        defaultConfig,
+        mockLLM("helper"),
+        fixedRandom([0]),
+    );
+    const result = await splitter(source, [{ start: 1, end: 1 }]);
+    assertEquals(result.changed, false);
+});
+
+Deno.test("function splitter with high coverage splits anywhere", async () => {
+    const lines = [];
+    for (let i = 0; i < 20; i++) {
+        lines.push(`    const v${i} = ${i};`);
+    }
+    const source = `function longFunc(a, b) {\n${
+        lines.join("\n")
+    }\n    return v19;\n}\n`;
+    const splitter = createFunctionSplitter(
+        defaultConfig,
+        mockLLM("helper"),
+        fixedRandom([0]),
+    );
+    const result = await splitter(source, [{ start: 1, end: 16 }]);
+    assertEquals(result.changed, true);
+    assert(result.source.includes("helper"));
+});
+
+Deno.test("function splitter with low coverage splits near diff at end", async () => {
+    const source = `function longFunc(a, b) {
+    const c = a + b;
+    const d = c * 2;
+    const e = d + a;
+    const f = e + b;
+    const g = f + a;
+    const h = g + b;
+    const i = h + a;
+    const j = i + b;
+    const k = j + a;
+    const l = k + b;
+    const m = l + a;
+    return m;
+}
+`;
+    const splitter = createFunctionSplitter(
+        defaultConfig,
+        mockLLM("helper"),
+        fixedRandom([0]),
+    );
+    const result = await splitter(source, [{ start: 12, end: 14 }]);
+    assertEquals(result.changed, true);
+    assert(result.source.includes("helper"));
 });

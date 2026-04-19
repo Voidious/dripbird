@@ -242,18 +242,66 @@ function isTrivialTail(tail: any[]): boolean {
     );
 }
 
+export function computeDiffCoverage(
+    funcStartLine: number,
+    funcEndLine: number,
+    ranges: ChangedRange[],
+): number {
+    const totalLines = funcEndLine - funcStartLine + 1;
+    if (totalLines <= 0) return 0;
+    let coveredLines = 0;
+    for (const range of ranges) {
+        const overlapStart = Math.max(range.start, funcStartLine);
+        const overlapEnd = Math.min(range.end, funcEndLine);
+        if (overlapStart <= overlapEnd) {
+            coveredLines += overlapEnd - overlapStart + 1;
+        }
+    }
+    return coveredLines / totalLines;
+}
+
+export function getDiffStatementRange(
+    bodyStmts: any[],
+    ranges: ChangedRange[],
+): { first: number; last: number } | null {
+    let first = -1;
+    let last = -1;
+    for (let i = 0; i < bodyStmts.length; i++) {
+        const stmt = bodyStmts[i];
+        if (!stmt.loc) continue;
+        const stmtStart = stmt.loc.start.line;
+        const stmtEnd = stmt.loc.end.line;
+        for (const range of ranges) {
+            if (stmtStart <= range.end && stmtEnd >= range.start) {
+                if (first === -1) first = i;
+                last = i;
+                break;
+            }
+        }
+    }
+    if (first === -1) return null;
+    return { first, last };
+}
+
 function selectSplitPoints(
     bodyStmts: any[],
     bodyStartLine: number,
     maxLines: number,
     rng: () => number,
     count: number,
+    restrictToRange?: { min: number; max: number },
 ): number[] {
     const validIndices: number[] = [];
     for (let i = 1; i < bodyStmts.length; i++) {
         const stmt = bodyStmts[i - 1];
         const headLines = stmt.loc.end.line - bodyStartLine;
         if (headLines <= maxLines) {
+            if (
+                restrictToRange &&
+                (i < restrictToRange.min || i > restrictToRange.max)
+            ) {
+                continue;
+            }
             validIndices.push(i);
         }
     }
@@ -540,12 +588,38 @@ export function createFunctionSplitter(
             } = candidate;
             const bodyStartLine = node.body.loc.start.line;
 
+            const coverage = computeDiffCoverage(
+                node.loc.start.line,
+                node.loc.end.line,
+                ranges,
+            );
+
+            let restrictToRange: { min: number; max: number } | undefined;
+            if (coverage < 0.6) {
+                const diffStmtRange = getDiffStatementRange(
+                    bodyStatements,
+                    ranges,
+                );
+                if (diffStmtRange) {
+                    restrictToRange = {
+                        min: Math.max(1, diffStmtRange.first),
+                        max: Math.min(
+                            bodyStatements.length - 1,
+                            diffStmtRange.last + 1,
+                        ),
+                    };
+                } else {
+                    continue;
+                }
+            }
+
             const splitIndices = selectSplitPoints(
                 bodyStatements,
                 bodyStartLine,
                 config.max_function_lines,
                 rng,
                 5,
+                restrictToRange,
             );
 
             if (splitIndices.length === 0) continue;
