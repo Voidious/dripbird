@@ -225,7 +225,7 @@ Deno.test("function splitter retries on LLM failure", async () => {
         async nameFunction(_ctx: string, _params: string[]) {
             callCount++;
             if (callCount < 3) throw new Error("LLM API error 500");
-            return "helper";
+            return `helper${callCount}`;
         },
     };
     const splitter = createFunctionSplitter(
@@ -235,7 +235,7 @@ Deno.test("function splitter retries on LLM failure", async () => {
     );
     const result = await splitter(source, [{ start: 1, end: 23 }]);
     assertEquals(result.changed, true);
-    assertEquals(callCount, 3);
+    assert(callCount >= 3);
     assert(result.source.includes("helper"));
 });
 
@@ -1143,7 +1143,7 @@ Deno.test("function splitter rejects forbidden name and retries", async () => {
         async nameFunction(_ctx: string, _params: string[], _forbidden?: string[]) {
             callCount++;
             if (callCount === 1) return "existingFunc";
-            return "goodHelper";
+            return `goodHelper${callCount}`;
         },
     };
     const splitter = createFunctionSplitter(
@@ -1153,7 +1153,7 @@ Deno.test("function splitter rejects forbidden name and retries", async () => {
     );
     const result = await splitter(source, [{ start: 3, end: 25 }]);
     assertEquals(result.changed, true);
-    assertEquals(callCount, 2);
+    assert(callCount >= 2);
     assert(result.source.includes("goodHelper"));
     assert(result.source.includes("function existingFunc"));
     assert(result.source.includes("function longFunc"));
@@ -1173,7 +1173,7 @@ Deno.test("function splitter rejects keyword name and retries", async () => {
         async nameFunction(_ctx: string, _params: string[], _forbidden?: string[]) {
             callCount++;
             if (callCount === 1) return "return";
-            return "validName";
+            return `validName${callCount}`;
         },
     };
     const splitter = createFunctionSplitter(
@@ -1183,7 +1183,7 @@ Deno.test("function splitter rejects keyword name and retries", async () => {
     );
     const result = await splitter(source, [{ start: 1, end: 23 }]);
     assertEquals(result.changed, true);
-    assertEquals(callCount, 2);
+    assert(callCount >= 2);
     assert(result.source.includes("validName"));
 });
 
@@ -1201,7 +1201,7 @@ Deno.test("function splitter rejects function-scoped variable name", async () =>
         async nameFunction(_ctx: string, _params: string[], _forbidden?: string[]) {
             callCount++;
             if (callCount === 1) return "v5";
-            return "computeResult";
+            return `computeResult${callCount}`;
         },
     };
     const splitter = createFunctionSplitter(
@@ -1211,7 +1211,7 @@ Deno.test("function splitter rejects function-scoped variable name", async () =>
     );
     const result = await splitter(source, [{ start: 1, end: 23 }]);
     assertEquals(result.changed, true);
-    assertEquals(callCount, 2);
+    assert(callCount >= 2);
     assert(result.source.includes("computeResult"));
 });
 
@@ -1394,4 +1394,177 @@ Deno.test("function splitter with low coverage splits near diff at end", async (
     const result = await splitter(source, [{ start: 12, end: 14 }]);
     assertEquals(result.changed, true);
     assert(result.source.includes("helper"));
+});
+
+Deno.test("function splitter recursively splits helper when over limit", async () => {
+    const lines = [];
+    for (let i = 0; i < 40; i++) {
+        lines.push(`    const v${i} = ${i};`);
+    }
+    const source = `function longFunc(a, b) {\n${
+        lines.join("\n")
+    }\n    return v39;\n}\n`;
+    let callCount = 0;
+    const llm: LLMClient = {
+        // deno-lint-ignore require-await
+        async nameFunction(_ctx: string, _params: string[]) {
+            callCount++;
+            return `helper${callCount}`;
+        },
+    };
+    const splitter = createFunctionSplitter(
+        { ...defaultConfig, max_function_lines: 15 },
+        llm,
+        fixedRandom([0]),
+    );
+    const result = await splitter(source, [{ start: 1, end: 42 }]);
+    assertEquals(result.changed, true);
+    assert(result.source.includes("helper1"));
+    assert(result.source.includes("helper2"));
+    assert(callCount >= 2);
+});
+
+Deno.test("function splitter prefers split point that avoids re-split", async () => {
+    const lines = [];
+    for (let i = 0; i < 20; i++) {
+        lines.push(`    const v${i} = ${i};`);
+    }
+    const source = `function longFunc(a, b) {\n${
+        lines.join("\n")
+    }\n    return v19;\n}\n`;
+    let callCount = 0;
+    const llm: LLMClient = {
+        // deno-lint-ignore require-await
+        async nameFunction(_ctx: string, _params: string[]) {
+            callCount++;
+            return `helper${callCount}`;
+        },
+    };
+    const splitter = createFunctionSplitter(
+        { ...defaultConfig, max_function_lines: 10 },
+        llm,
+        fixedRandom([0.5, 0.5, 0.5, 0.5, 0.5]),
+    );
+    const result = await splitter(source, [{ start: 1, end: 23 }]);
+    assertEquals(result.changed, true);
+    assert(result.source.includes("helper1"));
+    assert(callCount >= 2);
+});
+
+Deno.test("function splitter respects depth limit for very long functions", async () => {
+    const lines = [];
+    for (let i = 0; i < 100; i++) {
+        lines.push(`    const v${i} = ${i};`);
+    }
+    const source = `function longFunc(a, b) {\n${
+        lines.join("\n")
+    }\n    return v99;\n}\n`;
+    let callCount = 0;
+    const llm: LLMClient = {
+        // deno-lint-ignore require-await
+        async nameFunction(_ctx: string, _params: string[]) {
+            callCount++;
+            return `helper${callCount}`;
+        },
+    };
+    const splitter = createFunctionSplitter(
+        { ...defaultConfig, max_function_lines: 10 },
+        llm,
+        fixedRandom([0]),
+    );
+    const result = await splitter(source, [{ start: 1, end: 102 }]);
+    assertEquals(result.changed, true);
+    assert(callCount <= 5);
+});
+
+Deno.test("function splitter does not re-split original when only modification is call stmt", async () => {
+    const source = `function longFunc(a, b) {
+    const c = a + b;
+    const d = c * 2;
+    const e = d + a;
+    const f = e + b;
+    const g = f + a;
+    const h = g + b;
+    const i = h + a;
+    const j = i + b;
+    const k = j + a;
+    const l = k + b;
+    const m = l + a;
+    return m;
+}
+`;
+    let callCount = 0;
+    const llm: LLMClient = {
+        // deno-lint-ignore require-await
+        async nameFunction(_ctx: string, _params: string[]) {
+            callCount++;
+            return `helper${callCount}`;
+        },
+    };
+    const splitter = createFunctionSplitter(
+        defaultConfig,
+        llm,
+        fixedRandom([0]),
+    );
+    const result = await splitter(source, [{ start: 12, end: 13 }]);
+    assertEquals(result.changed, true);
+    assertEquals(callCount, 1);
+    assert(result.source.includes("helper1"));
+});
+
+Deno.test("function splitter re-splits original with high coverage when still over limit", async () => {
+    const lines = [];
+    for (let i = 0; i < 20; i++) {
+        lines.push(`    const v${i} = ${i};`);
+    }
+    const source = `function longFunc(a, b) {\n${
+        lines.join("\n")
+    }\n    return v19;\n}\n`;
+    let callCount = 0;
+    const llm: LLMClient = {
+        // deno-lint-ignore require-await
+        async nameFunction(_ctx: string, _params: string[]) {
+            callCount++;
+            return `helper${callCount}`;
+        },
+    };
+    const splitter = createFunctionSplitter(
+        { ...defaultConfig, max_function_lines: 10 },
+        llm,
+        fixedRandom([0.99, 0.99, 0.99, 0.99, 0.99]),
+    );
+    const result = await splitter(source, [{ start: 1, end: 23 }]);
+    assertEquals(result.changed, true);
+    assert(callCount >= 2);
+});
+
+Deno.test("function splitter recursively splits class method helper", async () => {
+    const lines = [];
+    for (let i = 0; i < 40; i++) {
+        lines.push(`        const v${i} = ${i};`);
+    }
+    const source = `class Processor {
+    process(a, b) {
+${lines.join("\n")}
+        return v39;
+    }
+}
+`;
+    let callCount = 0;
+    const llm: LLMClient = {
+        // deno-lint-ignore require-await
+        async nameFunction(_ctx: string, _params: string[]) {
+            callCount++;
+            return `step${callCount}`;
+        },
+    };
+    const splitter = createFunctionSplitter(
+        { ...defaultConfig, max_function_lines: 15 },
+        llm,
+        fixedRandom([0]),
+    );
+    const result = await splitter(source, [{ start: 2, end: 44 }]);
+    assertEquals(result.changed, true);
+    assert(result.source.includes("step1"));
+    assert(result.source.includes("step2"));
 });

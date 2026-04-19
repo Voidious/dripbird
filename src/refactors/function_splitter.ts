@@ -242,6 +242,20 @@ function isTrivialTail(tail: any[]): boolean {
     );
 }
 
+function estimateResultLineCounts(
+    splitIndex: number,
+    bodyStmts: any[],
+    funcStartLine: number,
+): { originalLines: number; helperLines: number } {
+    const headEndLine = bodyStmts[splitIndex - 1].loc.end.line;
+    const tailStartLine = bodyStmts[splitIndex].loc.start.line;
+    const tailEndLine = bodyStmts[bodyStmts.length - 1].loc.end.line;
+    return {
+        originalLines: headEndLine + 2 - funcStartLine,
+        helperLines: tailEndLine - tailStartLine + 2,
+    };
+}
+
 export function computeDiffCoverage(
     funcStartLine: number,
     funcEndLine: number,
@@ -451,6 +465,7 @@ export function createFunctionSplitter(
     random?: () => number,
 ): Refactor {
     const rng = random ?? Math.random;
+    const MAX_SPLIT_DEPTH = 5;
 
     return async (
         source: string,
@@ -578,7 +593,13 @@ export function createFunctionSplitter(
         const descriptions: string[] = [];
         const fileBindings = collectFileLevelBindings(ast);
 
-        for (const candidate of candidates) {
+        async function splitRecursively(
+            candidate: FunctionInfo,
+            coverage: number,
+            depth: number,
+        ): Promise<string[]> {
+            if (depth >= MAX_SPLIT_DEPTH) return [];
+
             const {
                 node,
                 bodyStatements,
@@ -586,13 +607,8 @@ export function createFunctionSplitter(
                 type,
                 className,
             } = candidate;
+            const funcStartLine = node.loc.start.line;
             const bodyStartLine = node.body.loc.start.line;
-
-            const coverage = computeDiffCoverage(
-                node.loc.start.line,
-                node.loc.end.line,
-                ranges,
-            );
 
             let restrictToRange: { min: number; max: number } | undefined;
             if (coverage < 0.6) {
@@ -609,7 +625,7 @@ export function createFunctionSplitter(
                         ),
                     };
                 } else {
-                    continue;
+                    return [];
                 }
             }
 
@@ -622,9 +638,9 @@ export function createFunctionSplitter(
                 restrictToRange,
             );
 
-            if (splitIndices.length === 0) continue;
+            if (splitIndices.length === 0) return [];
 
-            const splitCandidates: SplitCandidate[] = splitIndices.map((idx) => {
+            const splitCandidateInfos = splitIndices.map((idx) => {
                 const head = bodyStatements.slice(0, idx);
                 const tail = bodyStatements.slice(idx);
                 const params = computeFreeVars(
@@ -632,23 +648,36 @@ export function createFunctionSplitter(
                     tail,
                     originalParams,
                 );
-                return { splitIndex: idx, params };
+                const { originalLines, helperLines } = estimateResultLineCounts(
+                    idx,
+                    bodyStatements,
+                    funcStartLine,
+                );
+                const avoidsResplit = originalLines <= config.max_function_lines &&
+                    helperLines <= config.max_function_lines;
+                return { splitIndex: idx, params, avoidsResplit };
             });
 
-            const nonTrivial = splitCandidates.filter(
+            const nonTrivial = splitCandidateInfos.filter(
                 (c) => !isTrivialTail(bodyStatements.slice(c.splitIndex)),
             );
-            if (nonTrivial.length === 0) continue;
+            if (nonTrivial.length === 0) return [];
 
-            nonTrivial.sort(
-                (a, b) => a.params.length - b.params.length,
-            );
+            nonTrivial.sort((a, b) => {
+                if (a.avoidsResplit !== b.avoidsResplit) {
+                    return a.avoidsResplit ? -1 : 1;
+                }
+                return a.params.length - b.params.length;
+            });
             const best = nonTrivial[0];
 
             const head = bodyStatements.slice(0, best.splitIndex);
             const tail = bodyStatements.slice(best.splitIndex);
 
-            const tailCode = getTailCode(source, tail, node);
+            const tailCode = depth === 0
+                ? getTailCode(source, tail, node)
+                : tail.map((stmt: any) => print(stmt).code).join("\n");
+
             const funcBindings = collectAllBindings(bodyStatements);
             const forbiddenNames = new Set([
                 ...fileBindings,
@@ -667,20 +696,21 @@ export function createFunctionSplitter(
                         forbiddenList,
                     );
                 } catch {
-                    if (attempt === maxAttempts - 1) {
-                        return { changed: false, source, description: "" };
-                    }
+                    if (attempt === maxAttempts - 1) return [];
                     continue;
                 }
                 if (!forbiddenNames.has(helperName)) {
                     break;
                 }
-                if (attempt === maxAttempts - 1) {
-                    return { changed: false, source, description: "" };
-                }
+                if (attempt === maxAttempts - 1) return [];
             }
 
             const shouldReturn = returnsWithValue(tail);
+            const headEndLine = head[head.length - 1].loc.end.line;
+            const tailStartLine = tail[0].loc.start.line;
+            const tailEndLine = tail[tail.length - 1].loc.end.line;
+
+            let helperNode: any;
 
             if (type === "declaration") {
                 const helperFunc = b.functionDeclaration(
@@ -688,6 +718,7 @@ export function createFunctionSplitter(
                     best.params.map((p) => b.identifier(p)),
                     b.blockStatement([...tail]),
                 );
+                helperNode = helperFunc;
 
                 const callExpr = b.callExpression(
                     b.identifier(helperName),
@@ -697,8 +728,20 @@ export function createFunctionSplitter(
                 const callStmt = shouldReturn
                     ? b.returnStatement(callExpr)
                     : b.expressionStatement(callExpr);
+                callStmt.loc = {
+                    start: { line: headEndLine + 1, column: 0 },
+                    end: { line: headEndLine + 1, column: 0 },
+                };
 
                 node.body.body = [...head, callStmt];
+                node.loc = {
+                    start: node.loc.start,
+                    end: { line: headEndLine + 2, column: 0 },
+                };
+                node.body.loc = {
+                    start: node.body.loc.start,
+                    end: { line: headEndLine + 2, column: 0 },
+                };
 
                 const parentBody = candidate.parentBody;
                 const idx = parentBody.indexOf(node);
@@ -717,6 +760,7 @@ export function createFunctionSplitter(
                     false,
                     isStatic,
                 );
+                helperNode = helperMethod;
 
                 let callee;
                 if (isStatic && className) {
@@ -739,8 +783,20 @@ export function createFunctionSplitter(
                 const callStmt = shouldReturn
                     ? b.returnStatement(callExpr)
                     : b.expressionStatement(callExpr);
+                callStmt.loc = {
+                    start: { line: headEndLine + 1, column: 0 },
+                    end: { line: headEndLine + 1, column: 0 },
+                };
 
                 node.body.body = [...head, callStmt];
+                node.loc = {
+                    start: node.loc.start,
+                    end: { line: headEndLine + 2, column: 0 },
+                };
+                node.body.loc = {
+                    start: node.body.loc.start,
+                    end: { line: headEndLine + 2, column: 0 },
+                };
 
                 const parentBody = candidate.parentBody;
                 const idx = parentBody.indexOf(node);
@@ -749,10 +805,88 @@ export function createFunctionSplitter(
                 }
             }
 
-            descriptions.push(
-                `split function at line ${node.loc.start.line} into ${helperName}`,
-            );
+            helperNode.loc = {
+                start: { line: tailStartLine - 1, column: 0 },
+                end: { line: tailEndLine + 1, column: 0 },
+            };
+            if (helperNode.body) {
+                helperNode.body.loc = {
+                    start: { line: tailStartLine - 1, column: 0 },
+                    end: { line: tailEndLine + 1, column: 0 },
+                };
+            }
+
             fileBindings.add(helperName);
+            const splitDescs: string[] = [
+                `split function at line ${funcStartLine} into ${helperName}`,
+            ];
+
+            const { originalLines, helperLines } = estimateResultLineCounts(
+                best.splitIndex,
+                bodyStatements,
+                funcStartLine,
+            );
+
+            if (helperLines > config.max_function_lines) {
+                const helperInfo: FunctionInfo = {
+                    node: helperNode,
+                    parentBody: candidate.parentBody,
+                    bodyStatements: tail,
+                    originalParams: best.params,
+                    type: candidate.type,
+                    className: candidate.className,
+                };
+                const helperDescs = await splitRecursively(
+                    helperInfo,
+                    1.0,
+                    depth + 1,
+                );
+                splitDescs.push(...helperDescs);
+            }
+
+            if (originalLines > config.max_function_lines) {
+                let shouldResplit = coverage >= 0.6;
+                if (!shouldResplit) {
+                    shouldResplit = getDiffStatementRange(head, ranges) !== null;
+                }
+                if (shouldResplit) {
+                    const originalInfo: FunctionInfo = {
+                        node: node,
+                        parentBody: candidate.parentBody,
+                        bodyStatements: node.body.body,
+                        originalParams: originalParams,
+                        type: candidate.type,
+                        className: candidate.className,
+                    };
+                    const newCoverage = computeDiffCoverage(
+                        funcStartLine,
+                        headEndLine + 2,
+                        ranges,
+                    );
+                    const originalDescs = await splitRecursively(
+                        originalInfo,
+                        newCoverage,
+                        depth + 1,
+                    );
+                    splitDescs.push(...originalDescs);
+                }
+            }
+
+            return splitDescs;
+        }
+
+        for (const candidate of candidates) {
+            const coverage = computeDiffCoverage(
+                candidate.node.loc.start.line,
+                candidate.node.loc.end.line,
+                ranges,
+            );
+            const descs = await splitRecursively(
+                candidate,
+                coverage,
+                0,
+            );
+            descriptions.push(...descs);
         }
 
         if (descriptions.length === 0) {
