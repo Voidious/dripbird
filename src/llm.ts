@@ -70,7 +70,17 @@ export class MoonshotClient implements LLMClient {
         );
 
         const data: ChatResponse = await response.json();
-        const name = data.choices[0].message.content.trim();
+        if (!response.ok) {
+            throw new Error(
+                `LLM API error ${response.status}: ${JSON.stringify(data)}`,
+            );
+        }
+        const name = data?.choices?.[0]?.message?.content?.trim();
+        if (!name) {
+            throw new Error(
+                `Unexpected LLM response: ${JSON.stringify(data)}`,
+            );
+        }
         return name;
     }
 }

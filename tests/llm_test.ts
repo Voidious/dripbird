@@ -1,4 +1,4 @@
-import { assert, assertEquals } from "@std/assert";
+import { assert, assertEquals, assertRejects } from "@std/assert";
 import { createLLMClient, MoonshotClient } from "../src/llm.ts";
 
 function mockFetch(response: string): typeof fetch {
@@ -152,4 +152,33 @@ Deno.test("createLLMClient passes custom fetchFn", async () => {
     assert(client);
     const name = await client.nameFunction("code", ["x"]);
     assertEquals(name, "custom_name");
+});
+
+Deno.test("MoonshotClient throws on non-ok response", async () => {
+    const fetchFn = (() =>
+        Promise.resolve(
+            new Response(
+                JSON.stringify({ error: "unauthorized" }),
+                { status: 401 },
+            ),
+        )) as unknown as typeof fetch;
+    const client = new MoonshotClient("bad-key", "test-model", fetchFn);
+    await assertRejects(
+        () => client.nameFunction("code", ["x"]),
+        Error,
+        "LLM API error 401",
+    );
+});
+
+Deno.test("MoonshotClient throws on unexpected response shape", async () => {
+    const fetchFn = (() =>
+        Promise.resolve(
+            new Response(JSON.stringify({})),
+        )) as unknown as typeof fetch;
+    const client = new MoonshotClient("key", "test-model", fetchFn);
+    await assertRejects(
+        () => client.nameFunction("code", ["x"]),
+        Error,
+        "Unexpected LLM response",
+    );
 });
