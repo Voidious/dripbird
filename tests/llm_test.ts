@@ -78,6 +78,7 @@ Deno.test("createLLMClient returns null without API key", () => {
         Deno.env.delete("MOONSHOT_API_KEY");
         const config = {
             max_function_lines: 75,
+            function_splitter_retries: 2,
             provider: "moonshot",
             model: "kimi-k2.5",
             enabled_refactors: [],
@@ -97,6 +98,7 @@ Deno.test("createLLMClient uses env var API key", () => {
     try {
         const config = {
             max_function_lines: 75,
+            function_splitter_retries: 2,
             provider: "moonshot",
             model: "kimi-k2.5",
             enabled_refactors: [],
@@ -119,6 +121,7 @@ Deno.test("createLLMClient uses options API key over env", () => {
     try {
         const config = {
             max_function_lines: 75,
+            function_splitter_retries: 2,
             provider: "moonshot",
             model: "kimi-k2.5",
             enabled_refactors: [],
@@ -140,6 +143,7 @@ Deno.test("createLLMClient uses options API key over env", () => {
 Deno.test("createLLMClient passes custom fetchFn", async () => {
     const config = {
         max_function_lines: 75,
+        function_splitter_retries: 2,
         provider: "moonshot",
         model: "test-model",
         enabled_refactors: [],

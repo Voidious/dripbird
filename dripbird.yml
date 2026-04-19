@@ -4,6 +4,9 @@
 # maximum lines before a function is considered for splitting
 max_function_lines: 75
 
+# retry count for LLM calls when naming split helper functions
+function_splitter_retries: 2
+
 # LLM provider ("moonshot" or "openai")
 provider: moonshot
 

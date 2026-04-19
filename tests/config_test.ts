@@ -14,6 +14,7 @@ function partialConfig(
 ): Config {
     return {
         max_function_lines: 75,
+        function_splitter_retries: 2,
         provider: "moonshot",
         model: "kimi-k2.5",
         enabled_refactors: opts.enabled_refactors ?? [],
@@ -27,6 +28,7 @@ Deno.test("loadConfig returns defaults with no config files", () => {
         const config = loadConfig(tempDir);
         assertEquals(config, {
             max_function_lines: 75,
+            function_splitter_retries: 2,
             provider: "moonshot",
             model: "kimi-k2.5",
             enabled_refactors: [],
@@ -104,6 +106,20 @@ Deno.test("loadConfig ignores yaml array", () => {
         Deno.writeTextFileSync(`${tempDir}/dripbird.yml`, "- foo\n- bar\n");
         const config = loadConfig(tempDir);
         assertEquals(config.max_function_lines, 75);
+    } finally {
+        Deno.removeSync(tempDir, { recursive: true });
+    }
+});
+
+Deno.test("loadConfig reads function_splitter_retries", () => {
+    const tempDir = Deno.makeTempDirSync();
+    try {
+        Deno.writeTextFileSync(
+            `${tempDir}/dripbird.yml`,
+            "function_splitter_retries: 5\n",
+        );
+        const config = loadConfig(tempDir);
+        assertEquals(config.function_splitter_retries, 5);
     } finally {
         Deno.removeSync(tempDir, { recursive: true });
     }

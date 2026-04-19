@@ -37,6 +37,7 @@ function makeSource(fnCode: string): string {
 
 const defaultConfig = {
     max_function_lines: 10,
+    function_splitter_retries: 2,
     provider: "moonshot",
     model: "kimi-k2.5",
     enabled_refactors: [],
@@ -205,6 +206,60 @@ Deno.test("function splitter passes free variables as params", async () => {
     assertEquals(result.changed, true);
     assert(capturedParams.length > 0);
     assert(result.source.includes("function helper("));
+});
+
+Deno.test("function splitter retries on LLM failure", async () => {
+    const lines = [];
+    for (let i = 0; i < 20; i++) {
+        lines.push(`    const v${i} = ${i};`);
+    }
+    const source = `function longFunc(a, b) {\n${
+        lines.join("\n")
+    }\n    return v19;\n}\n`;
+    let callCount = 0;
+    const llm: LLMClient = {
+        // deno-lint-ignore require-await
+        async nameFunction(_ctx: string, _params: string[]) {
+            callCount++;
+            if (callCount < 3) throw new Error("LLM API error 500");
+            return "helper";
+        },
+    };
+    const splitter = createFunctionSplitter(
+        defaultConfig,
+        llm,
+        fixedRandom([0]),
+    );
+    const result = await splitter(source, [{ start: 1, end: 23 }]);
+    assertEquals(result.changed, true);
+    assertEquals(callCount, 3);
+    assert(result.source.includes("helper"));
+});
+
+Deno.test("function splitter gives up after retries exhausted", async () => {
+    const lines = [];
+    for (let i = 0; i < 20; i++) {
+        lines.push(`    const v${i} = ${i};`);
+    }
+    const source = `function longFunc(a, b) {\n${
+        lines.join("\n")
+    }\n    return v19;\n}\n`;
+    let callCount = 0;
+    const llm: LLMClient = {
+        // deno-lint-ignore require-await
+        async nameFunction(_ctx: string, _params: string[]) {
+            callCount++;
+            throw new Error("LLM API error 500");
+        },
+    };
+    const splitter = createFunctionSplitter(
+        defaultConfig,
+        llm,
+        fixedRandom([0]),
+    );
+    const result = await splitter(source, [{ start: 1, end: 23 }]);
+    assertEquals(result.changed, false);
+    assertEquals(callCount, 3);
 });
 
 function parseStmts(code: string): any[] {

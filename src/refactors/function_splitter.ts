@@ -456,10 +456,21 @@ export function createFunctionSplitter(
             const tail = bodyStatements.slice(best.splitIndex);
 
             const tailCode = getTailCode(source, tail, node);
-            const helperName = await llm.nameFunction(
-                tailCode,
-                best.params,
-            );
+            const maxAttempts = config.function_splitter_retries + 1;
+            let helperName = "";
+            for (let attempt = 0; attempt < maxAttempts; attempt++) {
+                try {
+                    helperName = await llm.nameFunction(
+                        tailCode,
+                        best.params,
+                    );
+                    break;
+                } catch {
+                    if (attempt === maxAttempts - 1) {
+                        return { changed: false, source, description: "" };
+                    }
+                }
+            }
 
             const shouldReturn = returnsWithValue(tail);
 
