@@ -233,6 +233,15 @@ function getOriginalParams(node: any): string[] {
         .filter((p: string | null): p is string => p !== null);
 }
 
+function isTrivialTail(tail: any[]): boolean {
+    if (tail.length !== 1) return false;
+    const stmt = tail[0];
+    return (
+        stmt.type === "ReturnStatement" &&
+        stmt.argument?.type === "Identifier"
+    );
+}
+
 function selectSplitPoints(
     bodyStmts: any[],
     bodyStartLine: number,
@@ -433,10 +442,15 @@ export function createFunctionSplitter(
                 return { splitIndex: idx, params };
             });
 
-            splitCandidates.sort(
+            const nonTrivial = splitCandidates.filter(
+                (c) => !isTrivialTail(bodyStatements.slice(c.splitIndex)),
+            );
+            if (nonTrivial.length === 0) continue;
+
+            nonTrivial.sort(
                 (a, b) => a.params.length - b.params.length,
             );
-            const best = splitCandidates[0];
+            const best = nonTrivial[0];
 
             const head = bodyStatements.slice(0, best.splitIndex);
             const tail = bodyStatements.slice(best.splitIndex);

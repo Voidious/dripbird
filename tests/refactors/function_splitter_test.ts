@@ -968,6 +968,30 @@ Deno.test("function splitter with multiple candidates processes all", async () =
     assert(result.source.includes("helper"));
 });
 
+Deno.test("function splitter skips trivial tail that just returns a variable", async () => {
+    const source = `function longFunc(a, b) {
+    const x = a + b + a
+        + b + a + b
+        + a + b + a
+        + b + a + b
+        + a + b + a
+        + b + a + b
+        + a + b + a
+        + b + a + b
+        + a + b + a
+        + b + a + b;
+    return x;
+}
+`;
+    const splitter = createFunctionSplitter(
+        defaultConfig,
+        mockLLM("helper"),
+        fixedRandom([0]),
+    );
+    const result = await splitter(source, [{ start: 1, end: 13 }]);
+    assertEquals(result.changed, false);
+});
+
 Deno.test("function splitter handles class expression in body", async () => {
     const source = `function longFunc(a, b) {
     const MyClass = class {};
