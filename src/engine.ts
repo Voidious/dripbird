@@ -11,17 +11,30 @@ export type Refactor = (
     ranges: ChangedRange[],
 ) => RefactorResult | Promise<RefactorResult>;
 
+export interface NamedRefactor {
+    name: string;
+    refactor: Refactor;
+}
+
+export interface RunResult extends RefactorResult {
+    timings: Array<{ name: string; durationMs: number }>;
+}
+
 export async function runRefactors(
     source: string,
     ranges: ChangedRange[],
-    refactors: Refactor[],
-): Promise<RefactorResult> {
+    refactors: NamedRefactor[],
+): Promise<RunResult> {
     let current = source;
     let anyChanged = false;
     const descriptions: string[] = [];
+    const timings: Array<{ name: string; durationMs: number }> = [];
 
-    for (const refactor of refactors) {
+    for (const { name, refactor } of refactors) {
+        const start = performance.now();
         const result = await refactor(current, ranges);
+        const durationMs = performance.now() - start;
+        timings.push({ name, durationMs });
         if (result.changed) {
             current = result.source;
             anyChanged = true;
@@ -33,5 +46,6 @@ export async function runRefactors(
         changed: anyChanged,
         source: current,
         description: descriptions.join("\n"),
+        timings,
     };
 }

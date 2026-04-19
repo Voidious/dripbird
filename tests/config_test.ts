@@ -1,7 +1,7 @@
 import { assertEquals } from "@std/assert";
 import { filterRefactors, loadConfig } from "../src/config.ts";
-import type { Config, NamedRefactor } from "../src/config.ts";
-import type { Refactor } from "../src/engine.ts";
+import type { Config } from "../src/config.ts";
+import type { NamedRefactor, Refactor } from "../src/engine.ts";
 
 const noop: Refactor = (_source, _ranges) => ({
     changed: false,

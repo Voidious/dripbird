@@ -1,5 +1,26 @@
-import { assert, assertEquals } from "@std/assert";
-import { readStream, run, runInDir } from "../src/main.ts";
+import { assert, assertEquals, assertRejects } from "@std/assert";
+import { formatDuration, readStream, run, runInDir } from "../src/main.ts";
+import { createLLMClient, LLMStats, MoonshotClient } from "../src/llm.ts";
+
+function mockFetchWithUsage(
+    response: string,
+    promptTokens: number,
+    completionTokens: number,
+): typeof fetch {
+    return (() =>
+        Promise.resolve(
+            new Response(
+                JSON.stringify({
+                    choices: [{ message: { content: response } }],
+                    usage: {
+                        prompt_tokens: promptTokens,
+                        completion_tokens: completionTokens,
+                        total_tokens: promptTokens + completionTokens,
+                    },
+                }),
+            ),
+        )) as unknown as typeof fetch;
+}
 
 function makeStream(data: string): ReadableStream<Uint8Array> {
     const encoded = new TextEncoder().encode(data);
@@ -347,3 +368,274 @@ Deno.test(
         }
     },
 );
+
+Deno.test("formatDuration formats milliseconds and seconds", () => {
+    assertEquals(formatDuration(0), "0ms");
+    assertEquals(formatDuration(500), "500ms");
+    assertEquals(formatDuration(999), "999ms");
+    assertEquals(formatDuration(1000), "1.0s");
+    assertEquals(formatDuration(1500), "1.5s");
+    assertEquals(formatDuration(12345), "12.3s");
+});
+
+Deno.test(
+    "runInDir prints summary with LLM stats and per-file breakdown",
+    async () => {
+        const tempDir = await Deno.makeTempDir();
+
+        const bodyLines = Array(40).fill(null).map((_, i) =>
+            `    const v${i} = ${i};`
+        );
+        const source = [
+            "function longFunc(x: number) {",
+            ...bodyLines,
+            "}",
+        ].join("\n") + "\n";
+        await Deno.writeTextFile(`${tempDir}/code.ts`, source);
+
+        Deno.writeTextFileSync(
+            `${tempDir}/dripbird.yml`,
+            "max_function_lines: 20\n",
+        );
+
+        const messages: string[] = [];
+        const orig = console.error;
+        console.error = (...args: unknown[]) => messages.push(args.join(" "));
+
+        try {
+            const diff = [
+                "--- a/code.ts",
+                "+++ b/code.ts",
+                "@@ -1,42 +1,42 @@",
+                " function longFunc",
+            ].join("\n");
+
+            let callIdx = 0;
+            const names = ["helperA", "helperB", "helperC"];
+            const fetchFn = (() => {
+                const name = names[callIdx % names.length];
+                callIdx++;
+                return Promise.resolve(
+                    new Response(
+                        JSON.stringify({
+                            choices: [{ message: { content: name } }],
+                            usage: {
+                                prompt_tokens: 100,
+                                completion_tokens: 5,
+                                total_tokens: 105,
+                            },
+                        }),
+                    ),
+                );
+            }) as unknown as typeof fetch;
+
+            const exitCode = await runInDir(diff, tempDir, {
+                apiKey: "test-key",
+                fetchFn,
+            });
+
+            assertEquals(exitCode, 1);
+
+            assert(messages.some((m) => m.includes("naming function")));
+            assert(messages.some((m) => m.includes("100 in")));
+            assert(messages.some((m) => m.includes("summary:")));
+            assert(messages.some((m) => m.includes("by refactor:")));
+            assert(messages.some((m) => m.includes("function_splitter")));
+            assert(messages.some((m) => m.includes("by file:")));
+            assert(
+                messages.some((m) =>
+                    m.includes("code.ts") && m.includes("llm call")
+                ),
+            );
+
+            const modified = await Deno.readTextFile(`${tempDir}/code.ts`);
+            assert(modified.includes("helperA"));
+        } finally {
+            console.error = orig;
+            await Deno.remove(tempDir, { recursive: true });
+        }
+    },
+);
+
+Deno.test(
+    "runInDir summary shows singular llm call with one split",
+    async () => {
+        const tempDir = await Deno.makeTempDir();
+
+        const bodyLines = Array(25).fill(null).map((_, i) =>
+            `    const v${i} = ${i};`
+        );
+        const source = [
+            "function medFunc(x: number) {",
+            ...bodyLines,
+            "}",
+        ].join("\n") + "\n";
+        await Deno.writeTextFile(`${tempDir}/code.ts`, source);
+
+        Deno.writeTextFileSync(
+            `${tempDir}/dripbird.yml`,
+            "max_function_lines: 20\n",
+        );
+
+        const messages: string[] = [];
+        const orig = console.error;
+        console.error = (...args: unknown[]) => messages.push(args.join(" "));
+
+        try {
+            const diff = [
+                "--- a/code.ts",
+                "+++ b/code.ts",
+                "@@ -1,27 +1,27 @@",
+                " function medFunc",
+            ].join("\n");
+
+            const fetchFn = (() =>
+                Promise.resolve(
+                    new Response(
+                        JSON.stringify({
+                            choices: [{ message: { content: "helperOne" } }],
+                            usage: {
+                                prompt_tokens: 80,
+                                completion_tokens: 5,
+                                total_tokens: 85,
+                            },
+                        }),
+                    ),
+                )) as unknown as typeof fetch;
+
+            const exitCode = await runInDir(diff, tempDir, {
+                apiKey: "test-key",
+                fetchFn,
+            });
+
+            assertEquals(exitCode, 1);
+            assert(
+                messages.some((m) =>
+                    m.includes("code.ts") && m.includes("1 llm call,")
+                ),
+            );
+        } finally {
+            console.error = orig;
+            await Deno.remove(tempDir, { recursive: true });
+        }
+    },
+);
+
+Deno.test("LLMStats and MoonshotClient full coverage in main process", async () => {
+    const stats = new LLMStats();
+    stats.setFile("a.ts");
+    stats.add({ durationMs: 100, promptTokens: 50, completionTokens: 10 });
+    stats.setFile("a.ts");
+    stats.add({ durationMs: 50, promptTokens: 0, completionTokens: 0 });
+    stats.setFile(null);
+    stats.add({ durationMs: 25, promptTokens: 25, completionTokens: 5 });
+
+    assertEquals(stats.callCount, 3);
+    assertEquals(stats.totalDurationMs, 175);
+    assertEquals(stats.totalPromptTokens, 75);
+    assertEquals(stats.totalCompletionTokens, 15);
+
+    const byFile = stats.byFile();
+    assertEquals(byFile.size, 2);
+    assertEquals(byFile.get("a.ts")!.callCount, 2);
+    assertEquals(byFile.get("(unknown)")!.callCount, 1);
+
+    const messages: string[] = [];
+    const orig = console.error;
+    console.error = (...args: unknown[]) => messages.push(args.join(" "));
+
+    try {
+        const client = new MoonshotClient(
+            "key",
+            "model",
+            mockFetchWithUsage("testName", 100, 8),
+            stats,
+        );
+        const name = await client.nameFunction("ctx", ["x"], ["bad"]);
+        assertEquals(name, "testName");
+        assert(messages.some((m) => m.includes("naming function")));
+        assert(messages.some((m) => m.includes("100 in") && m.includes("8 out")));
+
+        const errClient = new MoonshotClient(
+            "key",
+            "model",
+            (() =>
+                Promise.resolve(
+                    new Response(JSON.stringify({}), { status: 500 }),
+                )) as unknown as typeof fetch,
+            stats,
+        );
+        await assertRejects(
+            () => errClient.nameFunction("c", ["a"]),
+            Error,
+            "LLM API error 500",
+        );
+        assert(messages.some((m) => m.includes("API error 500")));
+
+        const badClient = new MoonshotClient(
+            "key",
+            "model",
+            (() =>
+                Promise.resolve(
+                    new Response(JSON.stringify({})),
+                )) as unknown as typeof fetch,
+            stats,
+        );
+        await assertRejects(
+            () => badClient.nameFunction("c", ["a"]),
+            Error,
+            "Unexpected LLM response",
+        );
+        assert(messages.some((m) => m.includes("bad response")));
+
+        const noUsageClient = new MoonshotClient(
+            "key",
+            "model",
+            (() =>
+                Promise.resolve(
+                    new Response(
+                        JSON.stringify({
+                            choices: [{ message: { content: "noUsage" } }],
+                        }),
+                    ),
+                )) as unknown as typeof fetch,
+            stats,
+        );
+        const noUsageName = await noUsageClient.nameFunction("c", ["a"]);
+        assertEquals(noUsageName, "noUsage");
+        assert(messages.some((m) => m.includes("ms") && !m.includes(" in")));
+    } finally {
+        console.error = orig;
+    }
+
+    const noStatsClient = new MoonshotClient(
+        "key",
+        "model",
+        (() =>
+            Promise.resolve(
+                new Response(
+                    JSON.stringify({
+                        choices: [{ message: { content: "plain" } }],
+                    }),
+                ),
+            )) as unknown as typeof fetch,
+    );
+    const plainName = await noStatsClient.nameFunction("c", ["a"]);
+    assertEquals(plainName, "plain");
+
+    const config = {
+        max_function_lines: 75,
+        function_splitter_retries: 2,
+        provider: "moonshot",
+        model: "m",
+        enabled_refactors: [],
+        disabled_refactors: [],
+    };
+    const fromFactory = createLLMClient(config, {
+        apiKey: "k",
+        fetchFn: mockFetchWithUsage("factory", 1, 1),
+        stats,
+    });
+    assert(fromFactory);
+    assertEquals(await fromFactory.nameFunction("c", ["a"]), "factory");
+});
