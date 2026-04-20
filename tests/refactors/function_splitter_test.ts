@@ -1541,7 +1541,7 @@ Deno.test("function splitter re-splits original with high coverage when still ov
 Deno.test("function splitter recursively splits class method helper", async () => {
     const lines = [];
     for (let i = 0; i < 40; i++) {
-        lines.push(`        const v${i} = ${i};`);
+        lines.push(`    const v${i} = ${i} + a + b.length;`);
     }
     const source = `class Processor {
     process(a, b) {
@@ -1567,4 +1567,188 @@ ${lines.join("\n")}
     assertEquals(result.changed, true);
     assert(result.source.includes("step1"));
     assert(result.source.includes("step2"));
+});
+
+Deno.test("function splitter preserves type annotations on extracted params", async () => {
+    const lines = [];
+    for (let i = 0; i < 20; i++) {
+        lines.push(`    const v${i} = ${i} + a;`);
+    }
+    const source = `function longFunc(a: number, b: string): number {\n${
+        lines.join("\n")
+    }\n    return v19;\n}\n`;
+    const splitter = createFunctionSplitter(
+        defaultConfig,
+        mockLLM("helper"),
+        fixedRandom([0]),
+    );
+    const result = await splitter(source, [{ start: 1, end: 23 }]);
+    assertEquals(result.changed, true);
+    assert(result.source.includes("function helper(a: number)"));
+});
+
+Deno.test("function splitter preserves optional and complex type annotations", async () => {
+    const lines = [];
+    for (let i = 0; i < 20; i++) {
+        lines.push(`    const v${i} = ${i} + a + (opts?.x ?? 0);`);
+    }
+    const source =
+        `function longFunc(a: number, opts?: { x: number; y: string }): number {\n${
+            lines.join("\n")
+        }\n    return v19;\n}\n`;
+    const splitter = createFunctionSplitter(
+        defaultConfig,
+        mockLLM("helper"),
+        fixedRandom([0]),
+    );
+    const result = await splitter(source, [{ start: 1, end: 23 }]);
+    assertEquals(result.changed, true);
+    assert(result.source.includes("a: number"));
+    assert(result.source.includes("opts?:"));
+});
+
+Deno.test("function splitter preserves type annotations from head variables", async () => {
+    const lines = [];
+    for (let i = 0; i < 15; i++) {
+        lines.push(`    const v${i} = items.length;`);
+    }
+    const source =
+        `function longFunc(a: number): number {\n    const items: string[] = [];\n    console.log("hi");\n${
+            lines.join("\n")
+        }\n    return v14;\n}\n`;
+    const splitter = createFunctionSplitter(
+        defaultConfig,
+        mockLLM("helper"),
+        fixedRandom([0]),
+    );
+    const result = await splitter(source, [{ start: 1, end: 19 }]);
+    assertEquals(result.changed, true);
+    assert(result.source.includes("items: string[]"));
+});
+
+Deno.test("function splitter preserves rest param type annotations", async () => {
+    const lines = [];
+    for (let i = 0; i < 20; i++) {
+        lines.push(`    const v${i} = ${i} + overrides.length + base;`);
+    }
+    const source =
+        `function longFunc(base: Config, ...overrides: (Record<string, unknown> | null)[]): Config {\n${
+            lines.join("\n")
+        }\n    return v19;\n}\n`;
+    const splitter = createFunctionSplitter(
+        defaultConfig,
+        mockLLM("helper"),
+        fixedRandom([0]),
+    );
+    const result = await splitter(source, [{ start: 1, end: 23 }]);
+    assertEquals(result.changed, true);
+    assert(result.source.includes("base: Config"));
+    assert(result.source.includes("overrides:"));
+});
+
+Deno.test("function splitter preserves class method param type annotations", async () => {
+    const lines = [];
+    for (let i = 0; i < 20; i++) {
+        lines.push(`        const v${i} = ${i} + a + b.length;`);
+    }
+    const source = `class Processor {
+    process(a: number, b: string): number {
+${lines.join("\n")}
+        return v19;
+    }
+}
+`;
+    const splitter = createFunctionSplitter(
+        defaultConfig,
+        mockLLM("compute"),
+        fixedRandom([0]),
+    );
+    const result = await splitter(source, [{ start: 2, end: 24 }]);
+    assertEquals(result.changed, true);
+    assert(result.source.includes("a: number"));
+    assert(result.source.includes("b: string"));
+});
+
+Deno.test("function splitter preserves types through recursive splits", async () => {
+    const lines = [];
+    for (let i = 0; i < 40; i++) {
+        lines.push(`    const v${i} = ${i};`);
+    }
+    const source = `function longFunc(a: number, b: string): number {\n${
+        lines.join("\n")
+    }\n    return v39;\n}\n`;
+    let callCount = 0;
+    const llm: LLMClient = {
+        // deno-lint-ignore require-await
+        async nameFunction(_ctx: string, _params: string[]) {
+            callCount++;
+            return `helper${callCount}`;
+        },
+    };
+    const splitter = createFunctionSplitter(
+        { ...defaultConfig, max_function_lines: 15 },
+        llm,
+        fixedRandom([0]),
+    );
+    const result = await splitter(source, [{ start: 1, end: 42 }]);
+    assertEquals(result.changed, true);
+    assert(result.source.includes("a: number"));
+    assert(result.source.includes("b: string"));
+});
+
+Deno.test("function splitter preserves types from destructured head variables", async () => {
+    const lines = [];
+    for (let i = 0; i < 15; i++) {
+        lines.push(`    const v${i} = x + rest.length;`);
+    }
+    const source =
+        `function longFunc(a: number): number {\n    const { x, ...rest }: { x: number; y: string; z: boolean } = getData();\n${
+            lines.join("\n")
+        }\n    return v14;\n}\n`;
+    const splitter = createFunctionSplitter(
+        defaultConfig,
+        mockLLM("helper"),
+        fixedRandom([0]),
+    );
+    const result = await splitter(source, [{ start: 1, end: 19 }]);
+    assertEquals(result.changed, true);
+    assert(result.source.includes("x:") || result.source.includes("rest:"));
+});
+
+Deno.test("function splitter preserves types from array-destructured head variables", async () => {
+    const lines = [];
+    for (let i = 0; i < 15; i++) {
+        lines.push(`    const v${i} = first + rest.length;`);
+    }
+    const source =
+        `function longFunc(a: number): number {\n    const [first, ...rest]: number[] = getArr();\n${
+            lines.join("\n")
+        }\n    return v14;\n}\n`;
+    const splitter = createFunctionSplitter(
+        defaultConfig,
+        mockLLM("helper"),
+        fixedRandom([0]),
+    );
+    const result = await splitter(source, [{ start: 1, end: 19 }]);
+    assertEquals(result.changed, true);
+    assert(result.source.includes("function helper"));
+});
+
+Deno.test("function splitter handles default param with type annotation", async () => {
+    const lines = [];
+    for (let i = 0; i < 20; i++) {
+        lines.push(`    const v${i} = ${i} + a;`);
+    }
+    const source =
+        `function longFunc(a: number = 10, b: string = "hi"): number {\n${
+            lines.join("\n")
+        }\n    return v19;\n}\n`;
+    const splitter = createFunctionSplitter(
+        defaultConfig,
+        mockLLM("helper"),
+        fixedRandom([0]),
+    );
+    const result = await splitter(source, [{ start: 1, end: 23 }]);
+    assertEquals(result.changed, true);
+    assert(result.source.includes("a: number"));
 });

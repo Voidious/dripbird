@@ -233,6 +233,108 @@ function getOriginalParams(node: any): string[] {
         .filter((p: string | null): p is string => p !== null);
 }
 
+function cloneAstNode(node: any): any {
+    if (node === null || node === undefined) return node;
+    if (typeof node !== "object") return node;
+    if (Array.isArray(node)) return node.map(cloneAstNode);
+    const result: any = {};
+    for (const key of Object.keys(node)) {
+        if (
+            key === "loc" || key === "start" || key === "end" ||
+            key === "tokens" || key === "comments"
+        ) continue;
+        result[key] = cloneAstNode(node[key]);
+    }
+    return result;
+}
+
+function findTypeAnnotationInPattern(pattern: any, name: string): any | null {
+    if (pattern.type === "Identifier" && pattern.name === name) {
+        return pattern.typeAnnotation || null;
+    }
+    return null;
+}
+
+function extractTypeFromParamNode(
+    param: any,
+    name: string,
+): { typeAnnotation: any; optional: boolean } | null {
+    if (param.type === "Identifier" && param.name === name) {
+        if (param.typeAnnotation) {
+            return {
+                typeAnnotation: param.typeAnnotation,
+                optional: !!param.optional,
+            };
+        }
+        return null;
+    }
+    if (
+        param.type === "AssignmentPattern" &&
+        param.left?.type === "Identifier" &&
+        param.left.name === name
+    ) {
+        if (param.left.typeAnnotation) {
+            return {
+                typeAnnotation: param.left.typeAnnotation,
+                optional: !!param.left.optional,
+            };
+        }
+        return null;
+    }
+    if (param.type === "RestElement") {
+        if (
+            param.argument?.type === "Identifier" &&
+            param.argument.name === name &&
+            param.typeAnnotation
+        ) {
+            return { typeAnnotation: param.typeAnnotation, optional: false };
+        }
+        return null;
+    }
+    return null;
+}
+
+function findTypeAnnotationForName(
+    name: string,
+    paramNodes: any[],
+    headStmts: any[],
+): { typeAnnotation: any; optional: boolean } | null {
+    for (const param of paramNodes) {
+        const result = extractTypeFromParamNode(param, name);
+        if (result) return result;
+    }
+    const varDecls = headStmts.filter((s) => s.type === "VariableDeclaration");
+    for (const stmt of varDecls) {
+        for (const decl of stmt.declarations) {
+            const ta = findTypeAnnotationInPattern(decl.id, name);
+            if (ta) return { typeAnnotation: ta, optional: false };
+        }
+    }
+    return null;
+}
+
+function buildTypedParams(
+    paramNames: string[],
+    originalParamNodes: any[],
+    headStmts: any[],
+): any[] {
+    return paramNames.map((name) => {
+        const param = b.identifier(name);
+        const typeInfo = findTypeAnnotationForName(
+            name,
+            originalParamNodes,
+            headStmts,
+        );
+        if (typeInfo?.typeAnnotation) {
+            param.typeAnnotation = cloneAstNode(typeInfo.typeAnnotation);
+        }
+        if (typeInfo?.optional) {
+            param.optional = true;
+        }
+        return param;
+    });
+}
+
 function isTrivialTail(tail: any[]): boolean {
     if (tail.length !== 1) return false;
     const stmt = tail[0];
@@ -712,10 +814,12 @@ export function createFunctionSplitter(
 
             let helperNode: any;
 
+            const typedParams = buildTypedParams(best.params, node.params, head);
+
             if (type === "declaration") {
                 const helperFunc = b.functionDeclaration(
                     b.identifier(helperName),
-                    best.params.map((p) => b.identifier(p)),
+                    typedParams,
                     b.blockStatement([...tail]),
                 );
                 helperNode = helperFunc;
@@ -755,7 +859,7 @@ export function createFunctionSplitter(
                 const helperMethod = b.classMethod(
                     "method",
                     b.identifier(helperName),
-                    best.params.map((p) => b.identifier(p)),
+                    typedParams,
                     b.blockStatement([...tail]),
                     false,
                     isStatic,
