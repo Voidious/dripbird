@@ -2,9 +2,11 @@
 import { parse, print, types, visit } from "recast";
 import * as babelParser from "@babel/parser";
 import type { ChangedRange } from "../diff.ts";
-import type { Refactor, RefactorResult } from "../engine.ts";
+import type { Refactor, RefactorContext, RefactorResult } from "../engine.ts";
 import type { Config } from "../config.ts";
 import type { LLMClient } from "../llm.ts";
+import type { TypeChecker } from "../type_checker.ts";
+import { parseTypeString } from "../type_checker.ts";
 import { inRange } from "./if_not_else.ts";
 
 const b = types.builders;
@@ -255,6 +257,59 @@ function findTypeAnnotationInPattern(pattern: any, name: string): any | null {
     return null;
 }
 
+function findIdentifierLoc(
+    pattern: any,
+    name: string,
+): { line: number; column: number } | null {
+    if (pattern.type === "Identifier" && pattern.name === name && pattern.loc) {
+        return {
+            line: pattern.loc.start.line,
+            column: pattern.loc.start.column,
+        };
+    }
+    if (pattern.type === "ObjectPattern") {
+        for (const prop of pattern.properties) {
+            if (prop.type === "ObjectProperty") {
+                const loc = findIdentifierLoc(prop.value, name);
+                if (loc) return loc;
+            } else if (prop.type === "RestElement") {
+                const loc = findIdentifierLoc(prop.argument, name);
+                if (loc) return loc;
+            }
+        }
+    }
+    if (pattern.type === "ArrayPattern") {
+        for (const elem of pattern.elements) {
+            if (elem) {
+                const loc = findIdentifierLoc(elem, name);
+                if (loc) return loc;
+            }
+        }
+    }
+    if (pattern.type === "RestElement") {
+        return findIdentifierLoc(pattern.argument, name);
+    }
+    if (pattern.type === "AssignmentPattern") {
+        return findIdentifierLoc(pattern.left, name);
+    }
+    return null;
+}
+
+function findVarDeclLocation(
+    name: string,
+    headStmts: any[],
+): { line: number; column: number } | null {
+    for (const stmt of headStmts) {
+        if (stmt.type === "VariableDeclaration") {
+            for (const decl of stmt.declarations) {
+                const loc = findIdentifierLoc(decl.id, name);
+                if (loc) return loc;
+            }
+        }
+    }
+    return null;
+}
+
 function extractTypeFromParamNode(
     param: any,
     name: string,
@@ -317,6 +372,7 @@ function buildTypedParams(
     paramNames: string[],
     originalParamNodes: any[],
     headStmts: any[],
+    typeChecker?: TypeChecker,
 ): any[] {
     return paramNames.map((name) => {
         const param = b.identifier(name);
@@ -327,9 +383,24 @@ function buildTypedParams(
         );
         if (typeInfo?.typeAnnotation) {
             param.typeAnnotation = cloneAstNode(typeInfo.typeAnnotation);
-        }
-        if (typeInfo?.optional) {
-            param.optional = true;
+            if (typeInfo.optional) param.optional = true;
+        } else if (typeChecker) {
+            const loc = findVarDeclLocation(name, headStmts);
+            if (loc) {
+                const typeStr = typeChecker.getTypeAtPosition(
+                    loc.line,
+                    loc.column,
+                );
+                if (typeStr) {
+                    try {
+                        param.typeAnnotation = cloneAstNode(
+                            parseTypeString(typeStr),
+                        );
+                    } catch {
+                        // skip unparseable type strings
+                    }
+                }
+            }
         }
         return param;
     });
@@ -565,6 +636,7 @@ export function createFunctionSplitter(
     config: Config,
     llm: LLMClient,
     random?: () => number,
+    typeChecker?: TypeChecker,
 ): Refactor {
     const rng = random ?? Math.random;
     const MAX_SPLIT_DEPTH = 5;
@@ -572,6 +644,7 @@ export function createFunctionSplitter(
     return async (
         source: string,
         ranges: ChangedRange[],
+        context?: RefactorContext,
     ): Promise<RefactorResult> => {
         let ast;
         try {
@@ -686,6 +759,13 @@ export function createFunctionSplitter(
 
         if (candidates.length === 0) {
             return { changed: false, source, description: "" };
+        }
+
+        if (typeChecker) {
+            await typeChecker.initForSource(
+                source,
+                context?.filePath,
+            );
         }
 
         candidates.sort(
@@ -814,7 +894,12 @@ export function createFunctionSplitter(
 
             let helperNode: any;
 
-            const typedParams = buildTypedParams(best.params, node.params, head);
+            const typedParams = buildTypedParams(
+                best.params,
+                node.params,
+                head,
+                typeChecker,
+            );
 
             if (type === "declaration") {
                 const helperFunc = b.functionDeclaration(

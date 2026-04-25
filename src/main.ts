@@ -5,6 +5,7 @@ import type { NamedRefactor } from "./engine.ts";
 import { createLLMClient, LLMStats } from "./llm.ts";
 import { ifNotElse } from "./refactors/if_not_else.ts";
 import { createFunctionSplitter } from "./refactors/function_splitter.ts";
+import { TypeCheckerImpl } from "./type_checker.ts";
 import type { LLMOptions } from "./llm.ts";
 
 export async function readStream(
@@ -98,10 +99,16 @@ export async function runInDir(
     ];
 
     const llm = createLLMClient(config, { ...llmOptions, stats: llmStats });
+    const typeChecker = new TypeCheckerImpl();
     if (llm) {
         namedRefactors.push({
             name: "function_splitter",
-            refactor: createFunctionSplitter(config, llm),
+            refactor: createFunctionSplitter(
+                config,
+                llm,
+                undefined,
+                typeChecker,
+            ),
         });
     }
 
@@ -127,7 +134,12 @@ export async function runInDir(
 
         llmStats.setFile(file);
         const fileStart = performance.now();
-        const result = await runRefactors(source, ranges, refactors);
+        const result = await runRefactors(
+            source,
+            ranges,
+            refactors,
+            { filePath },
+        );
         const fileDuration = performance.now() - fileStart;
 
         fileResults.push({

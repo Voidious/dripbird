@@ -12,6 +12,7 @@ import {
     getTailCode,
 } from "../../src/refactors/function_splitter.ts";
 import type { LLMClient } from "../../src/llm.ts";
+import { type TypeChecker, TypeCheckerImpl } from "../../src/type_checker.ts";
 import { parse } from "recast";
 import * as babelParser from "@babel/parser";
 
@@ -1751,4 +1752,242 @@ Deno.test("function splitter handles default param with type annotation", async 
     const result = await splitter(source, [{ start: 1, end: 23 }]);
     assertEquals(result.changed, true);
     assert(result.source.includes("a: number"));
+});
+
+Deno.test("function splitter infers types via TypeChecker for untyped head vars", async () => {
+    const lines = [];
+    for (let i = 0; i < 15; i++) {
+        lines.push(`    const v${i} = m.size + i;`);
+    }
+    const source =
+        `function longFunc(a: number): number {\n    const m = new Map<string, number>();\n${
+            lines.join("\n")
+        }\n    return v14;\n}\n`;
+    const typeChecker = new TypeCheckerImpl();
+    const splitter = createFunctionSplitter(
+        defaultConfig,
+        mockLLM("helper"),
+        fixedRandom([0]),
+        typeChecker,
+    );
+    const result = await splitter(source, [{ start: 1, end: 19 }]);
+    assertEquals(result.changed, true);
+    assert(result.source.includes("m: Map<string, number>"));
+    typeChecker.dispose();
+});
+
+Deno.test("function splitter falls back when TypeChecker returns null", async () => {
+    const lines = [];
+    for (let i = 0; i < 15; i++) {
+        lines.push(`    const v${i} = x + i;`);
+    }
+    const source =
+        `function longFunc(a: number): number {\n    const x = getData();\n${
+            lines.join("\n")
+        }\n    return v14;\n}\n`;
+    const checker = new TypeCheckerImpl(() => {
+        throw new Error("no ts");
+    });
+    const splitter = createFunctionSplitter(
+        defaultConfig,
+        mockLLM("helper"),
+        fixedRandom([0]),
+        checker,
+    );
+    const result = await splitter(source, [{ start: 1, end: 19 }]);
+    assertEquals(result.changed, true);
+    assert(result.source.includes("function helper("));
+});
+
+function nullTypeChecker(): TypeChecker {
+    return {
+        async initForSource() {},
+        getTypeAtPosition() {
+            return null;
+        },
+        dispose() {},
+    };
+}
+
+Deno.test("function splitter uses TypeChecker with destructured object variable", async () => {
+    const lines = [];
+    for (let i = 0; i < 15; i++) {
+        lines.push(`    const v${i} = items.length;`);
+    }
+    const source =
+        `function longFunc(a: number): number {\n    const { items } = getData();\n${
+            lines.join("\n")
+        }\n    return v14;\n}\n`;
+    const splitter = createFunctionSplitter(
+        defaultConfig,
+        mockLLM("helper"),
+        fixedRandom([0]),
+        nullTypeChecker(),
+    );
+    const result = await splitter(source, [{ start: 1, end: 19 }]);
+    assertEquals(result.changed, true);
+    assert(result.source.includes("items"));
+});
+
+Deno.test("function splitter uses TypeChecker with destructured array variable", async () => {
+    const lines = [];
+    for (let i = 0; i < 15; i++) {
+        lines.push(`    const v${i} = first + i;`);
+    }
+    const source =
+        `function longFunc(a: number): number {\n    const [first, second] = getArr();\n${
+            lines.join("\n")
+        }\n    return v14;\n}\n`;
+    const splitter = createFunctionSplitter(
+        defaultConfig,
+        mockLLM("helper"),
+        fixedRandom([0]),
+        nullTypeChecker(),
+    );
+    const result = await splitter(source, [{ start: 1, end: 19 }]);
+    assertEquals(result.changed, true);
+    assert(result.source.includes("first"));
+});
+
+Deno.test("function splitter uses TypeChecker with rest element variable", async () => {
+    const lines = [];
+    for (let i = 0; i < 15; i++) {
+        lines.push(`    const v${i} = rest.length + i;`);
+    }
+    const source =
+        `function longFunc(a: number): number {\n    const { x, ...rest } = getData();\n${
+            lines.join("\n")
+        }\n    return v14;\n}\n`;
+    const splitter = createFunctionSplitter(
+        defaultConfig,
+        mockLLM("helper"),
+        fixedRandom([0]),
+        nullTypeChecker(),
+    );
+    const result = await splitter(source, [{ start: 1, end: 19 }]);
+    assertEquals(result.changed, true);
+    assert(result.source.includes("rest"));
+});
+
+Deno.test("function splitter uses TypeChecker with default value variable", async () => {
+    const lines = [];
+    for (let i = 0; i < 15; i++) {
+        lines.push(`    const v${i} = val + i;`);
+    }
+    const source =
+        `function longFunc(a: number): number {\n    const { val = 10 } = getData();\n${
+            lines.join("\n")
+        }\n    return v14;\n}\n`;
+    const splitter = createFunctionSplitter(
+        defaultConfig,
+        mockLLM("helper"),
+        fixedRandom([0]),
+        nullTypeChecker(),
+    );
+    const result = await splitter(source, [{ start: 1, end: 19 }]);
+    assertEquals(result.changed, true);
+    assert(result.source.includes("val"));
+});
+
+Deno.test("function splitter handles unparseable type from TypeChecker", async () => {
+    const lines = [];
+    for (let i = 0; i < 15; i++) {
+        lines.push(`    const v${i} = m.size + i;`);
+    }
+    const source =
+        `function longFunc(a: number): number {\n    const m = new Map();\n${
+            lines.join("\n")
+        }\n    return v14;\n}\n`;
+    const badChecker: TypeChecker = {
+        async initForSource() {},
+        getTypeAtPosition() {
+            return "!!!not a type!!!";
+        },
+        dispose() {},
+    };
+    const splitter = createFunctionSplitter(
+        defaultConfig,
+        mockLLM("helper"),
+        fixedRandom([0]),
+        badChecker,
+    );
+    const result = await splitter(source, [{ start: 1, end: 19 }]);
+    assertEquals(result.changed, true);
+    assert(result.source.includes("helper"));
+});
+
+Deno.test("function splitter TypeChecker skips when free var is untyped param", async () => {
+    const lines = [];
+    for (let i = 0; i < 15; i++) {
+        lines.push(`    const v${i} = b + i;`);
+    }
+    const source = `function longFunc(a: number, b): number {\n    const c = a;\n${
+        lines.join("\n")
+    }\n    return v14;\n}\n`;
+    const splitter = createFunctionSplitter(
+        defaultConfig,
+        mockLLM("helper"),
+        fixedRandom([0]),
+        nullTypeChecker(),
+    );
+    const result = await splitter(source, [{ start: 1, end: 19 }]);
+    assertEquals(result.changed, true);
+});
+
+Deno.test("function splitter handles array rest element with TypeChecker", async () => {
+    const lines = [];
+    for (let i = 0; i < 15; i++) {
+        lines.push(`    const v${i} = rest.length + i;`);
+    }
+    const source =
+        `function longFunc(a: number): number {\n    const [...rest] = getArr();\n${
+            lines.join("\n")
+        }\n    return v14;\n}\n`;
+    const splitter = createFunctionSplitter(
+        defaultConfig,
+        mockLLM("helper"),
+        fixedRandom([0]),
+        nullTypeChecker(),
+    );
+    const result = await splitter(source, [{ start: 1, end: 19 }]);
+    assertEquals(result.changed, true);
+    assert(result.source.includes("rest"));
+});
+
+Deno.test("function splitter TypeChecker skips unmatched ObjectPattern property", async () => {
+    const lines = [];
+    for (let i = 0; i < 15; i++) {
+        lines.push(`    const v${i} = target + i;`);
+    }
+    const source =
+        `function longFunc(a: number): number {\n    const { x } = getData();\n    const target = x + a;\n${
+            lines.join("\n")
+        }\n    return v14;\n}\n`;
+    const splitter = createFunctionSplitter(
+        defaultConfig,
+        mockLLM("helper"),
+        fixedRandom([0]),
+        nullTypeChecker(),
+    );
+    const result = await splitter(source, [{ start: 1, end: 20 }]);
+    assertEquals(result.changed, true);
+});
+
+Deno.test("function splitter TypeChecker skips unmatched ArrayPattern element", async () => {
+    const lines = [];
+    for (let i = 0; i < 15; i++) {
+        lines.push(`    const v${i} = target + i;`);
+    }
+    const source =
+        `function longFunc(a: number): number {\n    const [x] = getArr();\n    const target = x + a;\n${
+            lines.join("\n")
+        }\n    return v14;\n}\n`;
+    const splitter = createFunctionSplitter(
+        defaultConfig,
+        mockLLM("helper"),
+        fixedRandom([0]),
+        nullTypeChecker(),
+    );
+    const result = await splitter(source, [{ start: 1, end: 20 }]);
+    assertEquals(result.changed, true);
 });

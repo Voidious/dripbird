@@ -6,9 +6,14 @@ export interface RefactorResult {
     description: string;
 }
 
+export interface RefactorContext {
+    filePath: string;
+}
+
 export type Refactor = (
     source: string,
     ranges: ChangedRange[],
+    context?: RefactorContext,
 ) => RefactorResult | Promise<RefactorResult>;
 
 export interface NamedRefactor {
@@ -24,6 +29,7 @@ export async function runRefactors(
     source: string,
     ranges: ChangedRange[],
     refactors: NamedRefactor[],
+    context?: RefactorContext,
 ): Promise<RunResult> {
     let current = source;
     let anyChanged = false;
@@ -32,7 +38,7 @@ export async function runRefactors(
 
     for (const { name, refactor } of refactors) {
         const start = performance.now();
-        const result = await refactor(current, ranges);
+        const result = await refactor(current, ranges, context);
         const durationMs = performance.now() - start;
         timings.push({ name, durationMs });
         if (result.changed) {
