@@ -901,6 +901,18 @@ export function createFunctionSplitter(
                 typeChecker,
             );
 
+            const sorted = typedParams
+                .map((p: any, i: number) => ({
+                    p,
+                    name: best.params[i],
+                    opt: !!p.optional,
+                }))
+                .sort((a, b) => a.opt === b.opt ? 0 : a.opt ? 1 : -1);
+            for (let i = 0; i < sorted.length; i++) {
+                typedParams[i] = sorted[i].p;
+                best.params[i] = sorted[i].name;
+            }
+
             if (type === "declaration") {
                 const helperFunc = b.functionDeclaration(
                     b.identifier(helperName),

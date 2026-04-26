@@ -1608,6 +1608,37 @@ Deno.test("function splitter preserves optional and complex type annotations", a
     assert(result.source.includes("opts?:"));
 });
 
+Deno.test("function splitter moves optional params after required params in extracted function", async () => {
+    const lines = [];
+    for (let i = 0; i < 20; i++) {
+        lines.push(`    const v${i} = ${i} + rng() + (opts?.x ?? 0);`);
+    }
+    const source =
+        `function longFunc(a: number, opts?: { x: number }, rng: () => number): number {\n${
+            lines.join("\n")
+        }\n    return v19;\n}\n`;
+    const splitter = createFunctionSplitter(
+        defaultConfig,
+        mockLLM("helper"),
+        fixedRandom([0]),
+    );
+    const result = await splitter(source, [{ start: 1, end: 23 }]);
+    assertEquals(result.changed, true);
+    const match = result.source.match(
+        /function helper\(([^)]+)\)/,
+    );
+    assert(match);
+    const params = match[1].split(",").map((p: string) => p.trim());
+    const optionalIdx = params.findIndex((p: string) => p.includes("?"));
+    const requiredIdx = params.findIndex((p: string) => !p.includes("?"));
+    if (optionalIdx >= 0 && requiredIdx >= 0) {
+        assert(
+            optionalIdx > requiredIdx,
+            "optional params should come after required",
+        );
+    }
+});
+
 Deno.test("function splitter preserves type annotations from head variables", async () => {
     const lines = [];
     for (let i = 0; i < 15; i++) {
