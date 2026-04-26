@@ -1006,6 +1006,12 @@ export function createFunctionSplitter(
                 }
             }
 
+            if (shouldReturn && node.returnType) {
+                helperNode.returnType = cloneAstNode(node.returnType);
+            } else {
+                helperNode.returnType = parseTypeString("void");
+            }
+
             helperNode.loc = {
                 start: { line: tailStartLine - 1, column: 0 },
                 end: { line: tailEndLine + 1, column: 0 },
