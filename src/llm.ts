@@ -12,6 +12,7 @@ export interface LLMOptions {
     apiKey?: string;
     fetchFn?: typeof fetch;
     stats?: LLMStats;
+    logFn?: (msg: string) => void;
 }
 
 export interface LLMCallRecord {
@@ -106,17 +107,20 @@ export class MoonshotClient implements LLMClient {
     private model: string;
     private fetchFn: typeof fetch;
     private stats: LLMStats | null;
+    private logFn: (msg: string) => void;
 
     constructor(
         apiKey: string,
         model: string,
         fetchFn?: typeof fetch,
         stats?: LLMStats,
+        logFn?: (msg: string) => void,
     ) {
         this.apiKey = apiKey;
         this.model = model;
         this.fetchFn = fetchFn ?? fetch;
         this.stats = stats ?? null;
+        this.logFn = logFn ?? ((msg: string) => console.error(msg));
     }
 
     async nameFunction(
@@ -142,7 +146,7 @@ export class MoonshotClient implements LLMClient {
         ];
 
         if (this.stats) {
-            console.error(
+            this.logFn(
                 `dripbird: llm: naming function (params: ${params.join(", ")})...`,
             );
         }
@@ -172,7 +176,7 @@ export class MoonshotClient implements LLMClient {
 
         if (!response.ok) {
             if (this.stats) {
-                console.error(
+                this.logFn(
                     `dripbird: llm: API error ${response.status} after ${
                         Math.round(durationMs)
                     }ms`,
@@ -186,7 +190,7 @@ export class MoonshotClient implements LLMClient {
         const name = data?.choices?.[0]?.message?.content?.trim();
         if (!name) {
             if (this.stats) {
-                console.error(
+                this.logFn(
                     `dripbird: llm: bad response after ${Math.round(durationMs)}ms`,
                 );
             }
@@ -201,7 +205,7 @@ export class MoonshotClient implements LLMClient {
             let tokenMsg = "";
             if (data.usage) tokenMsg += `, ${promptTokens} in`;
             if (data.usage) tokenMsg += `, ${completionTokens} out`;
-            console.error(
+            this.logFn(
                 `dripbird: llm: ${Math.round(durationMs)}ms${tokenMsg} → "${name}"`,
             );
             this.stats.add({ durationMs, promptTokens, completionTokens });
@@ -222,5 +226,6 @@ export function createLLMClient(
         config.model,
         options?.fetchFn,
         options?.stats,
+        options?.logFn,
     );
 }

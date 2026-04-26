@@ -213,14 +213,119 @@ Deno.test(
             );
             assert(
                 messages.some((m) =>
-                    m.includes("provider=moonshot") &&
-                    m.includes("model=kimi-k2.5") &&
-                    m.includes("max_function_lines=75") &&
-                    m.includes("function_splitter_retries=2")
+                    m.includes("provider:") && m.includes("moonshot")
+                ),
+            );
+            assert(
+                messages.some((m) =>
+                    m.includes("model:") && m.includes("kimi-k2.5")
+                ),
+            );
+            assert(
+                messages.some((m) =>
+                    m.includes("max_function_lines:") && m.includes("75")
+                ),
+            );
+            assert(
+                messages.some((m) =>
+                    m.includes("function_splitter_retries:") &&
+                    m.includes("2")
                 ),
             );
         } finally {
             console.error = original;
+            await Deno.remove(tempDir, { recursive: true });
+        }
+    },
+);
+
+Deno.test(
+    "runInDir logs LLM activity directly after config is printed",
+    async () => {
+        const tempDir = await Deno.makeTempDir();
+
+        await Deno.writeTextFile(
+            `${tempDir}/alpha.ts`,
+            "if (!a) {\n    b();\n} else {\n    c();\n}\n",
+        );
+
+        const bodyLines = Array(40).fill(null).map((_, i) =>
+            `    const v${i} = ${i};`
+        );
+        const betaSource = [
+            "function longFunc(x: number) {",
+            ...bodyLines,
+            "}",
+        ].join("\n") + "\n";
+        await Deno.writeTextFile(`${tempDir}/beta.ts`, betaSource);
+
+        Deno.writeTextFileSync(
+            `${tempDir}/dripbird.yml`,
+            "max_function_lines: 20\n",
+        );
+
+        const messages: string[] = [];
+        const orig = console.error;
+        console.error = (...args: unknown[]) => messages.push(args.join(" "));
+
+        try {
+            const diff = [
+                "--- a/alpha.ts",
+                "+++ b/alpha.ts",
+                "@@ -1,5 +1,5 @@",
+                " if (!a) {",
+                "--- b/beta.ts",
+                "+++ b/beta.ts",
+                "@@ -1,42 +1,42 @@",
+                " function longFunc",
+            ].join("\n");
+
+            let callIdx = 0;
+            const names = ["helperA", "helperB", "helperC"];
+            const fetchFn = (() => {
+                const name = names[callIdx % names.length];
+                callIdx++;
+                return Promise.resolve(
+                    new Response(
+                        JSON.stringify({
+                            choices: [{ message: { content: name } }],
+                            usage: {
+                                prompt_tokens: 100,
+                                completion_tokens: 5,
+                                total_tokens: 105,
+                            },
+                        }),
+                    ),
+                );
+            }) as unknown as typeof fetch;
+
+            const exitCode = await runInDir(diff, tempDir, {
+                apiKey: "test-key",
+                fetchFn,
+            });
+
+            assertEquals(exitCode, 1);
+
+            const configIdx = messages.findIndex((m) => m.includes("provider:"));
+            const llmIdx = messages.findIndex((m) =>
+                m.includes("llm: naming function")
+            );
+            assert(configIdx >= 0);
+            assert(llmIdx >= 0);
+            assert(configIdx < llmIdx);
+
+            assert(
+                messages.some((m) =>
+                    m.includes("alpha.ts") && m.includes("inverted")
+                ),
+            );
+            assert(
+                messages.some((m) =>
+                    m.includes("beta.ts") && m.includes("split function")
+                ),
+            );
+        } finally {
+            console.error = orig;
             await Deno.remove(tempDir, { recursive: true });
         }
     },
@@ -355,12 +460,23 @@ Deno.test(
             const exitCode = await runInDir(diff, tempDir);
             assertEquals(exitCode, 1);
 
-            const summary = messages.find((m) => m.includes("provider="));
-            assert(summary);
-            assert(summary.includes("provider=openai"));
-            assert(summary.includes("model=gpt-4"));
-            assert(summary.includes("max_function_lines=30"));
-            assert(summary.includes("function_splitter_retries=5"));
+            const providerLine = messages.find((m) => m.includes("provider:"));
+            assert(providerLine);
+            assert(providerLine.includes("openai"));
+            assert(
+                messages.some((m) => m.includes("model:") && m.includes("gpt-4")),
+            );
+            assert(
+                messages.some((m) =>
+                    m.includes("max_function_lines:") && m.includes("30")
+                ),
+            );
+            assert(
+                messages.some((m) =>
+                    m.includes("function_splitter_retries:") &&
+                    m.includes("5")
+                ),
+            );
         } finally {
             console.error = orig;
             if (originalEnv) Deno.env.set("MOONSHOT_API_KEY", originalEnv);

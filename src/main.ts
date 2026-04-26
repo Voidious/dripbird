@@ -1,6 +1,6 @@
 import { groupByFile, parseDiff } from "./diff.ts";
 import { runRefactors } from "./engine.ts";
-import { filterRefactors, loadConfig } from "./config.ts";
+import { type Config, filterRefactors, loadConfig } from "./config.ts";
 import type { NamedRefactor } from "./engine.ts";
 import { createLLMClient, LLMStats } from "./llm.ts";
 import { ifNotElse } from "./refactors/if_not_else.ts";
@@ -79,6 +79,19 @@ function printSummary(
     }
 }
 
+function printConfig(config: Config): void {
+    const entries: [string, string][] = [
+        ["provider", config.provider],
+        ["model", config.model],
+        ["max_function_lines", String(config.max_function_lines)],
+        ["function_splitter_retries", String(config.function_splitter_retries)],
+    ];
+    const maxKeyLen = Math.max(...entries.map(([k]) => k.length));
+    for (const [key, value] of entries) {
+        console.error(`dripbird:   ${`${key}:`.padEnd(maxKeyLen + 2)}${value}`);
+    }
+}
+
 export async function runInDir(
     diff: string,
     baseDir: string,
@@ -94,11 +107,32 @@ export async function runInDir(
     const config = loadConfig(baseDir);
     const llmStats = new LLMStats();
 
+    const pendingLog: string[] = [];
+    let logFlushed = false;
+    const log = (msg: string) => {
+        if (logFlushed) {
+            console.error(msg);
+        } else {
+            pendingLog.push(msg);
+        }
+    };
+    const flushLog = () => {
+        for (const msg of pendingLog) {
+            console.error(msg);
+        }
+        pendingLog.length = 0;
+        logFlushed = true;
+    };
+
     const namedRefactors: NamedRefactor[] = [
         { name: "if_not_else", refactor: ifNotElse },
     ];
 
-    const llm = createLLMClient(config, { ...llmOptions, stats: llmStats });
+    const llm = createLLMClient(config, {
+        ...llmOptions,
+        stats: llmStats,
+        logFn: log,
+    });
     const typeChecker = new TypeCheckerImpl();
     if (llm) {
         namedRefactors.push({
@@ -151,10 +185,9 @@ export async function runInDir(
 
         if (result.changed) {
             if (!configPrinted) {
-                console.error(
-                    `dripbird: provider=${config.provider} model=${config.model} max_function_lines=${config.max_function_lines} function_splitter_retries=${config.function_splitter_retries}`,
-                );
+                printConfig(config);
                 configPrinted = true;
+                flushLog();
             }
             await Deno.writeTextFile(filePath, result.source);
             console.error(
