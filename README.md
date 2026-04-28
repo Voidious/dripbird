@@ -8,6 +8,10 @@ It uses [recast](https://github.com/benjamn/recast) for format-preserving AST
 transformations and optional LLM integration (via Moonshot AI) for intelligent
 function naming.
 
+_The wise dripbird sits perched among the highest branches of the Abstract Syntax
+Trees in the forest of code. Dressed in a suit that absolutely slays, the dripbird
+is ready to sharpen your change set before it gets checked in—for real._
+
 ## Overview
 
 ```
