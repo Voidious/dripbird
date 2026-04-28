@@ -1,6 +1,6 @@
 {
     "name": "@pcupka/dripbird",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "tasks": {
         "fmt": "deno fmt",
         "fmt:check": "deno fmt --check",
