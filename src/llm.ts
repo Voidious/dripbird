@@ -300,10 +300,7 @@ export class MoonshotClient implements LLMClient {
                     temperature: 1,
                     max_tokens: 1024,
                     tools: [tool],
-                    tool_choice: {
-                        type: "function",
-                        function: { name: tool.function.name },
-                    },
+                    tool_choice: "required",
                 }),
             },
         );
