@@ -225,7 +225,6 @@ export class MoonshotClient implements LLMClient {
                 body: JSON.stringify({
                     model: this.model,
                     messages,
-                    temperature: 1,
                     max_tokens: 3000,
                 }),
             },
@@ -297,7 +296,6 @@ export class MoonshotClient implements LLMClient {
                 body: JSON.stringify({
                     model: this.model,
                     messages,
-                    temperature: 1,
                     max_tokens: 1024,
                     tools: [tool],
                     tool_choice: "required",
