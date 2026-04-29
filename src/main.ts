@@ -5,6 +5,7 @@ import type { NamedRefactor } from "./engine.ts";
 import { createLLMClient, LLMStats } from "./llm.ts";
 import { ifNotElse } from "./refactors/if_not_else.ts";
 import { createFunctionSplitter } from "./refactors/function_splitter.ts";
+import { createFunctionMatcher } from "./refactors/function_matcher.ts";
 import { TypeCheckerImpl } from "./type_checker.ts";
 import type { LLMOptions } from "./llm.ts";
 
@@ -143,6 +144,10 @@ export async function runInDir(
                 undefined,
                 typeChecker,
             ),
+        });
+        namedRefactors.push({
+            name: "function_matcher",
+            refactor: createFunctionMatcher(llm),
         });
     }
 
