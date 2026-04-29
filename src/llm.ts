@@ -301,6 +301,7 @@ export class MoonshotClient implements LLMClient {
                     max_tokens: 1024,
                     tools: [tool],
                     tool_choice: "required",
+                    thinking: { type: "disabled" },
                 }),
             },
         );
