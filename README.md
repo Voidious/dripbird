@@ -9,8 +9,9 @@ transformations and optional LLM integration (via Moonshot AI) for intelligent
 function naming.
 
 _The wise dripbird sits perched among the highest branches of the Abstract Syntax
-Trees in the forest of code. Dressed in a suit that absolutely slays, the dripbird
-is ready to sharpen your change set before it gets checked in—for real._
+Trees in the forest of code. Looking snatched in a suit that high key slays, the
+dripbird is ready to lock in and sharpen your change set before it becomes canon—for
+real._
 
 ## Overview
 
