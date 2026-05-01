@@ -8,6 +8,7 @@ export interface Config {
     model: string;
     enabled_refactors: string[];
     disabled_refactors: string[];
+    verbose: boolean;
 }
 
 export function filterRefactors(
@@ -34,6 +35,7 @@ const DEFAULTS: Config = {
     model: "kimi-k2.5",
     enabled_refactors: [],
     disabled_refactors: [],
+    verbose: false,
 };
 
 function readYamlFile(filePath: string): Record<string, unknown> | null {
@@ -79,6 +81,9 @@ function mergeConfig(
         }
         if (isStringArray(override.disabled_refactors)) {
             result.disabled_refactors = override.disabled_refactors;
+        }
+        if (typeof override.verbose === "boolean") {
+            result.verbose = override.verbose;
         }
     }
     return result;

@@ -19,6 +19,7 @@ function partialConfig(
         model: "kimi-k2.5",
         enabled_refactors: opts.enabled_refactors ?? [],
         disabled_refactors: opts.disabled_refactors ?? [],
+        verbose: false,
     };
 }
 
@@ -33,6 +34,7 @@ Deno.test("loadConfig returns defaults with no config files", () => {
             model: "kimi-k2.5",
             enabled_refactors: [],
             disabled_refactors: [],
+            verbose: false,
         });
     } finally {
         Deno.removeSync(tempDir, { recursive: true });

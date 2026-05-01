@@ -221,6 +221,7 @@ Deno.test("createLLMClient passes stats to client", async () => {
             model: "test-model",
             enabled_refactors: [],
             disabled_refactors: [],
+            verbose: false,
         };
         const client = createLLMClient(config, {
             apiKey: "key",
@@ -306,6 +307,7 @@ Deno.test("createLLMClient returns null without API key", () => {
             model: "kimi-k2.5",
             enabled_refactors: [],
             disabled_refactors: [],
+            verbose: false,
         };
         const client = createLLMClient(config);
         assertEquals(client, null);
@@ -326,6 +328,7 @@ Deno.test("createLLMClient uses env var API key", () => {
             model: "kimi-k2.5",
             enabled_refactors: [],
             disabled_refactors: [],
+            verbose: false,
         };
         const client = createLLMClient(config);
         assert(client instanceof MoonshotClient);
@@ -349,6 +352,7 @@ Deno.test("createLLMClient uses options API key over env", () => {
             model: "kimi-k2.5",
             enabled_refactors: [],
             disabled_refactors: [],
+            verbose: false,
         };
         const client = createLLMClient(config, {
             apiKey: "options-key",
@@ -371,6 +375,7 @@ Deno.test("createLLMClient passes custom fetchFn", async () => {
         model: "test-model",
         enabled_refactors: [],
         disabled_refactors: [],
+        verbose: false,
     };
     const client = createLLMClient(config, {
         apiKey: "key",

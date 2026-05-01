@@ -485,6 +485,119 @@ Deno.test(
     },
 );
 
+Deno.test(
+    "runInDir verbose mode prints config and summary even with no changes",
+    async () => {
+        const tempDir = await Deno.makeTempDir();
+        const filePath = `${tempDir}/test.ts`;
+        const original = "const x = 1;\nconsole.log(x);\n";
+        await Deno.writeTextFile(filePath, original);
+
+        Deno.writeTextFileSync(
+            `${tempDir}/dripbird.yml`,
+            "verbose: true\n",
+        );
+
+        const messages: string[] = [];
+        const orig = console.error;
+        console.error = (...args: unknown[]) => messages.push(args.join(" "));
+
+        const originalEnv = Deno.env.get("MOONSHOT_API_KEY");
+        Deno.env.delete("MOONSHOT_API_KEY");
+        try {
+            const diff = [
+                "--- a/test.ts",
+                "+++ b/test.ts",
+                "@@ -1,2 +1,2 @@",
+                " const x = 1;",
+            ].join("\n");
+
+            const exitCode = await runInDir(diff, tempDir);
+            assertEquals(exitCode, 0);
+            assert(messages.some((m) => m.includes("provider:")));
+            assert(messages.some((m) => m.includes("test.ts: no changes")));
+            assert(messages.some((m) => m.includes("summary:")));
+        } finally {
+            console.error = orig;
+            if (originalEnv) Deno.env.set("MOONSHOT_API_KEY", originalEnv);
+            await Deno.remove(tempDir, { recursive: true });
+        }
+    },
+);
+
+Deno.test(
+    "runInDir verbose mode passes log to refactors",
+    async () => {
+        const tempDir = await Deno.makeTempDir();
+        const filePath = `${tempDir}/test.ts`;
+        const original = [
+            "function greet(name) {",
+            '    return "Hello, " + name;',
+            "}",
+            "",
+            "function run() {",
+            '    const a = "Hello, " + x;',
+            "}",
+        ].join("\n") + "\n";
+        await Deno.writeTextFile(filePath, original);
+
+        Deno.writeTextFileSync(
+            `${tempDir}/dripbird.yml`,
+            "verbose: true\nenabled_refactors: ['function_matcher']\n",
+        );
+
+        const messages: string[] = [];
+        const orig = console.error;
+        console.error = (...args: unknown[]) => messages.push(args.join(" "));
+
+        const toolResponse = JSON.stringify({
+            choices: [{
+                message: {
+                    content: null,
+                    tool_calls: [{
+                        function: {
+                            name: "evaluate_match",
+                            arguments: '{"is_match":false,"reason":"test reject"}',
+                        },
+                    }],
+                },
+            }],
+            usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+        });
+
+        const fetchFn = (() =>
+            Promise.resolve(
+                new Response(toolResponse),
+            )) as unknown as typeof fetch;
+
+        try {
+            const diff = [
+                "--- a/test.ts",
+                "+++ b/test.ts",
+                "@@ -5,3 +5,3 @@",
+                " function run()",
+            ].join("\n");
+
+            const exitCode = await runInDir(diff, tempDir, {
+                apiKey: "test-key",
+                fetchFn,
+            });
+            assertEquals(exitCode, 0);
+            assert(
+                messages.some((m) =>
+                    m.includes("function_matcher:") && m.includes("found")
+                ),
+            );
+            assert(
+                messages.some((m) => m.includes("LLM rejected match")),
+            );
+        } finally {
+            console.error = orig;
+            await Deno.remove(tempDir, { recursive: true });
+        }
+    },
+);
+
 Deno.test("formatDuration formats milliseconds and seconds", () => {
     assertEquals(formatDuration(0), "0ms");
     assertEquals(formatDuration(500), "500ms");
@@ -746,6 +859,7 @@ Deno.test("LLMStats and MoonshotClient full coverage in main process", async () 
         model: "m",
         enabled_refactors: [],
         disabled_refactors: [],
+        verbose: false,
     };
     const fromFactory = createLLMClient(config, {
         apiKey: "k",

@@ -58,6 +58,7 @@ const defaultConfig = {
     model: "kimi-k2.5",
     enabled_refactors: [],
     disabled_refactors: [],
+    verbose: false,
 };
 
 function fixedRandom(values: number[]): () => number {

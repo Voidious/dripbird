@@ -86,6 +86,7 @@ function printConfig(config: Config): void {
         ["model", config.model],
         ["max_function_lines", String(config.max_function_lines)],
         ["function_splitter_retries", String(config.function_splitter_retries)],
+        ["verbose", String(config.verbose)],
     ];
     const maxKeyLen = Math.max(...entries.map(([k]) => k.length));
     for (const [key, value] of entries) {
@@ -177,7 +178,7 @@ export async function runInDir(
             source,
             ranges,
             refactors,
-            { filePath },
+            { filePath, log: config.verbose ? log : undefined },
         );
         const fileDuration = performance.now() - fileStart;
 
@@ -199,12 +200,21 @@ export async function runInDir(
                 `dripbird: ${file}: ${result.description}`,
             );
             anyChanged = true;
+        } else if (config.verbose) {
+            if (!configPrinted) {
+                printConfig(config);
+                configPrinted = true;
+                flushLog();
+            }
+            console.error(`dripbird: ${file}: no changes`);
         }
     }
 
     const overallDuration = performance.now() - overallStart;
 
     if (anyChanged) {
+        printSummary(overallDuration, fileResults, llmStats);
+    } else if (config.verbose) {
         printSummary(overallDuration, fileResults, llmStats);
     }
 

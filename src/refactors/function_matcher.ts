@@ -561,6 +561,8 @@ export function createFunctionMatcher(
         ranges: ChangedRange[],
         _context?: RefactorContext,
     ): Promise<RefactorResult> => {
+        const log = _context?.log ?? (() => {});
+
         let ast;
         try {
             ast = parseSource(source);
@@ -572,8 +574,17 @@ export function createFunctionMatcher(
 
         const functions = collectFunctions(ast, sourceLines);
         if (functions.length === 0) {
+            log?.("dripbird: function_matcher: no functions found");
             return { changed: false, source, description: "" };
         }
+
+        log?.(
+            `dripbird: function_matcher: found ${functions.length} function(s): ${
+                functions.map((f) =>
+                    `${f.name}(${f.params.length} params, ${f.bodyStatements.length} stmts)`
+                ).join(", ")
+            }`,
+        );
 
         const maxBodyLen = Math.max(
             ...functions.map((f) => f.bodyStatements.length),
@@ -597,8 +608,17 @@ export function createFunctionMatcher(
         );
 
         if (bodyMatches.length === 0 && exprMatches.length === 0) {
+            log?.(
+                `dripbird: function_matcher: no fingerprint matches (checked ${sequences.length} sequences across ${ranges.length} range(s): ${
+                    ranges.map((r) => `${r.start}-${r.end}`).join(", ")
+                })`,
+            );
             return { changed: false, source, description: "" };
         }
+
+        log?.(
+            `dripbird: function_matcher: ${bodyMatches.length} body match(es), ${exprMatches.length} expression match(es)`,
+        );
 
         const allMatches: Array<{
             startLine: number;
@@ -672,12 +692,23 @@ export function createFunctionMatcher(
                 )
                 .join("\n");
 
+            log?.(
+                `dripbird: function_matcher: candidate lines ${match.startLine}-${match.endLine} → ${match.func.name} (algo: ${
+                    match.algoReplacement ? "yes" : "no"
+                })`,
+            );
+
             const verifyResult = await llm.verifyFunctionMatch(
                 match.codeBlock,
                 funcSource,
                 source,
             );
-            if (!verifyResult.isMatch) continue;
+            if (!verifyResult.isMatch) {
+                log?.(
+                    `dripbird: function_matcher: LLM rejected match (lines ${match.startLine}-${match.endLine} → ${match.func.name}): ${verifyResult.reason}`,
+                );
+                continue;
+            }
 
             let replacement: string;
             if (match.algoReplacement) {
@@ -705,14 +736,24 @@ export function createFunctionMatcher(
             } catch {
                 parseOk = false;
             }
-            if (!parseOk) continue;
+            if (!parseOk) {
+                log?.(
+                    `dripbird: function_matcher: replacement didn't parse (lines ${match.startLine}-${match.endLine} → ${match.func.name})`,
+                );
+                continue;
+            }
 
             const reviewResult = await llm.reviewChange(
                 match.codeBlock,
                 proposedSource,
                 `replaced code at lines ${match.startLine}-${match.endLine} with call to ${match.func.name}`,
             );
-            if (!reviewResult.accepted) continue;
+            if (!reviewResult.accepted) {
+                log?.(
+                    `dripbird: function_matcher: LLM review rejected (lines ${match.startLine}-${match.endLine} → ${match.func.name}): ${reviewResult.feedback}`,
+                );
+                continue;
+            }
 
             currentSource = proposedSource;
             claimedRanges.push({

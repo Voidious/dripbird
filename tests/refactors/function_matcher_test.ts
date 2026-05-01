@@ -296,6 +296,139 @@ Deno.test("function matcher: doesn't match across different string literals", as
     assertEquals(result.changed, false);
 });
 
+Deno.test("function matcher: no fingerprint match without log callback", async () => {
+    const source = [
+        "function greet(name) {",
+        "    console.log(name);",
+        "}",
+        "",
+        "const x = 1;",
+    ].join("\n");
+    const matcher = createFunctionMatcher(acceptAll);
+    const result = await matcher(source, [{ start: 5, end: 5 }]);
+    assertEquals(result.changed, false);
+});
+
+Deno.test("function matcher: verbose logging covers no-functions path", async () => {
+    const logs: string[] = [];
+    const matcher = createFunctionMatcher(acceptAll);
+    await matcher("const x = 1;", [{ start: 1, end: 1 }], {
+        filePath: "test.ts",
+        log: (msg) => logs.push(msg),
+    });
+    assert(logs.some((l) => l.includes("no functions found")));
+});
+
+Deno.test("function matcher: verbose logging covers functions-found path", async () => {
+    const logs: string[] = [];
+    const source = [
+        "function greet(name) {",
+        '    return "Hello, " + name;',
+        "}",
+        "",
+        "function run() {",
+        '    const a = "Hello, " + x;',
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(acceptAll);
+    await matcher(source, [{ start: 1, end: 6 }], {
+        filePath: "test.ts",
+        log: (msg) => logs.push(msg),
+    });
+    assert(logs.some((l) => l.includes("found 2 function(s)")));
+    assert(logs.some((l) => l.includes("expression match")));
+});
+
+Deno.test("function matcher: verbose logging covers match and reject paths", async () => {
+    const logs: string[] = [];
+    const source = [
+        "function double(n) {",
+        "    return n * 2;",
+        "}",
+        "",
+        "function run() {",
+        "    const result = x * 2;",
+        "}",
+    ].join("\n");
+    const llm = mockLLM({
+        verifyResult: { isMatch: false, reason: "not same" },
+    });
+    const matcher = createFunctionMatcher(llm);
+    await matcher(source, [{ start: 5, end: 6 }], {
+        filePath: "test.ts",
+        log: (msg) => logs.push(msg),
+    });
+    assert(logs.some((l) => l.includes("expression match")));
+    assert(logs.some((l) => l.includes("candidate lines")));
+    assert(logs.some((l) => l.includes("LLM rejected match")));
+    assert(logs.some((l) => l.includes("not same")));
+});
+
+Deno.test("function matcher: verbose logging covers body match candidate", async () => {
+    const logs: string[] = [];
+    const source = [
+        "function logMsg() {",
+        '    console.log("hi");',
+        "}",
+        "",
+        "function run() {",
+        '    console.log("hi");',
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(acceptAll);
+    await matcher(source, [{ start: 5, end: 6 }], {
+        filePath: "test.ts",
+        log: (msg) => logs.push(msg),
+    });
+    assert(logs.some((l) => l.includes("body match")));
+    assert(logs.some((l) => l.includes("candidate lines")));
+});
+
+Deno.test("function matcher: verbose logging covers parse failure", async () => {
+    const logs: string[] = [];
+    const source = [
+        "function double(n) {",
+        "    return n * 2;",
+        "}",
+        "",
+        "function run() {",
+        "    obj.prop = x * 2;",
+        "}",
+    ].join("\n");
+    const llm = mockLLM({
+        replacement: "}}}}INVALID",
+    });
+    const matcher = createFunctionMatcher(llm);
+    await matcher(source, [{ start: 5, end: 6 }], {
+        filePath: "test.ts",
+        log: (msg) => logs.push(msg),
+    });
+    assert(logs.some((l) => l.includes("replacement didn't parse")));
+});
+
+Deno.test("function matcher: verbose logging covers review rejection", async () => {
+    const logs: string[] = [];
+    const source = [
+        "function double(n) {",
+        "    return n * 2;",
+        "}",
+        "",
+        "function run() {",
+        "    const result = x * 2;",
+        "}",
+    ].join("\n");
+    const llm = mockLLM({
+        reviewResult: { accepted: false, feedback: "wrong semantics" },
+    });
+    const matcher = createFunctionMatcher(llm);
+    await matcher(source, [{ start: 5, end: 6 }], {
+        filePath: "test.ts",
+        log: (msg) => logs.push(msg),
+    });
+    assert(logs.some((l) => l.includes("LLM review rejected")));
+    assert(logs.some((l) => l.includes("wrong semantics")));
+});
+
 Deno.test("function matcher: skips invalid replacement that doesn't parse", async () => {
     const source = [
         "function sendGreeting(connection, mode) {",
