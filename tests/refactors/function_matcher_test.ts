@@ -1194,3 +1194,315 @@ Deno.test("function matcher: getParamNames with array rest destructured", async 
     const result = await matcher(source, [{ start: 5, end: 6 }]);
     assert(result.changed);
 });
+
+Deno.test("function matcher: matches static method body in function", async () => {
+    const source = [
+        "class Utils {",
+        "    static sendGreeting(connection) {",
+        '        connection.send("Hello,");',
+        '        connection.send("I am from Earth.");',
+        "    }",
+        "}",
+        "",
+        "function run() {",
+        "    const conn = getConnection();",
+        '    conn.send("Hello,");',
+        '    conn.send("I am from Earth.");',
+        "}",
+    ].join("\n");
+
+    const llm = mockLLM({
+        replacement: "    Utils.sendGreeting(conn);\n",
+    });
+
+    const matcher = createFunctionMatcher(llm);
+    const result = await matcher(source, [{ start: 8, end: 11 }]);
+    assertEquals(result.changed, true);
+    assert(result.source.includes("Utils.sendGreeting(conn)"));
+    assert(!result.source.includes('conn.send("Hello,")'));
+});
+
+Deno.test("function matcher: expression match with static method", async () => {
+    const source = [
+        "class Str {",
+        "    static clean(s) {",
+        "        return s.trim().toLowerCase();",
+        "    }",
+        "}",
+        "",
+        "function run() {",
+        "    const sanitized = input.trim().toLowerCase();",
+        "}",
+    ].join("\n");
+
+    const matcher = createFunctionMatcher(acceptAll);
+    const result = await matcher(source, [{ start: 7, end: 8 }]);
+    assertEquals(result.changed, true);
+    assert(result.source.includes("Str.clean(input)"));
+});
+
+Deno.test("function matcher: static method skips self-matching", async () => {
+    const source = [
+        "class Utils {",
+        "    static logMsg() {",
+        '        console.log("hi");',
+        "    }",
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(acceptAll);
+    const result = await matcher(source, [{ start: 2, end: 3 }]);
+    assertEquals(result.changed, false);
+});
+
+Deno.test("function matcher: static method matches another static method body", async () => {
+    const source = [
+        "class Utils {",
+        "    static logMsg() {",
+        '        console.log("hi");',
+        "    }",
+        "",
+        "    static run() {",
+        '        console.log("hi");',
+        "    }",
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(acceptAll);
+    const result = await matcher(source, [{ start: 6, end: 7 }]);
+    assertEquals(result.changed, true);
+    assert(result.source.includes("Utils.logMsg()"));
+});
+
+Deno.test("function matcher: skips non-static class methods", async () => {
+    const source = [
+        "class Utils {",
+        "    clean(s) {",
+        "        return s.trim().toLowerCase();",
+        "    }",
+        "}",
+        "",
+        "function run() {",
+        "    const result = input.trim().toLowerCase();",
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(acceptAll);
+    const result = await matcher(source, [{ start: 7, end: 8 }]);
+    assertEquals(result.changed, false);
+});
+
+Deno.test("function matcher: skips async static method", async () => {
+    const source = [
+        "class Foo {",
+        "    static async fetchData(url) {",
+        "        return fetch(url);",
+        "    }",
+        "}",
+        "",
+        "function run() {",
+        "    const response = fetch('/api');",
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(acceptAll);
+    const result = await matcher(source, [{ start: 7, end: 8 }]);
+    assertEquals(result.changed, false);
+});
+
+Deno.test("function matcher: matches sequence in instance method with static method", async () => {
+    const source = [
+        "class Processor {",
+        "    static clean(s) {",
+        "        return s.trim().toLowerCase();",
+        "    }",
+        "",
+        "    process(input) {",
+        "        const sanitized = input.trim().toLowerCase();",
+        "    }",
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(acceptAll);
+    const result = await matcher(source, [{ start: 6, end: 7 }]);
+    assertEquals(result.changed, true);
+    assert(result.source.includes("Processor.clean(input)"));
+});
+
+Deno.test("function matcher: skips constructor in static method collection", async () => {
+    const source = [
+        "class Foo {",
+        "    constructor(x) {",
+        "        this.x = x;",
+        "    }",
+        "    static logX(x) {",
+        "        console.log(x);",
+        "    }",
+        "}",
+        "",
+        "function run() {",
+        "    console.log(val);",
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(acceptAll);
+    const result = await matcher(source, [{ start: 10, end: 11 }]);
+    assertEquals(result.changed, true);
+    assert(result.source.includes("Foo.logX(val)"));
+});
+
+Deno.test("function matcher: algorithmic replacement for zero-arg static method", async () => {
+    const source = [
+        "class Config {",
+        "    static getGreeting() {",
+        '        return "Hello, World!";',
+        "    }",
+        "}",
+        "",
+        "function run() {",
+        '    const msg = "Hello, World!";',
+        "    console.log(msg);",
+        "}",
+    ].join("\n");
+
+    const matcher = createFunctionMatcher(acceptAll);
+    const result = await matcher(source, [{ start: 7, end: 9 }]);
+    assertEquals(result.changed, true);
+    assert(result.source.includes("Config.getGreeting()"));
+});
+
+Deno.test("function matcher: skips generator static method", async () => {
+    const source = [
+        "class Foo {",
+        "    static* generateItems(count) {",
+        "        for (let i = 0; i < count; i++) { yield i; }",
+        "    }",
+        "}",
+        "",
+        "function run() {",
+        "    for (let i = 0; i < 5; i++) { yield i; }",
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(acceptAll);
+    const result = await matcher(source, [{ start: 7, end: 8 }]);
+    assertEquals(result.changed, false);
+});
+
+Deno.test("function matcher: skips empty body static method", async () => {
+    const source = [
+        "class Foo {",
+        "    static noop() {}",
+        "}",
+        "",
+        "function run() {",
+        "    const x = 1;",
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(acceptAll);
+    const result = await matcher(source, [{ start: 5, end: 6 }]);
+    assertEquals(result.changed, false);
+});
+
+Deno.test("function matcher: skips computed key static method", async () => {
+    const source = [
+        "const methodName = 'clean';",
+        "class Foo {",
+        "    static [methodName](s) {",
+        "        return s.trim();",
+        "    }",
+        "}",
+        "",
+        "function run() {",
+        "    const result = input.trim();",
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(acceptAll);
+    const result = await matcher(source, [{ start: 8, end: 9 }]);
+    assertEquals(result.changed, false);
+});
+
+Deno.test("function matcher: skips static method on anonymous class", async () => {
+    const source = [
+        "export default class {",
+        "    static clean(s) {",
+        "        return s.trim();",
+        "    }",
+        "}",
+        "",
+        "function run() {",
+        "    const result = input.trim();",
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(acceptAll);
+    const result = await matcher(source, [{ start: 7, end: 8 }]);
+    assertEquals(result.changed, false);
+});
+
+Deno.test("function matcher: expression match inside class method body", async () => {
+    const source = [
+        "class Str {",
+        "    static clean(s) {",
+        "        return s.trim().toLowerCase();",
+        "    }",
+        "}",
+        "",
+        "class Processor {",
+        "    run() {",
+        "        const sanitized = input.trim().toLowerCase();",
+        "    }",
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(acceptAll);
+    const result = await matcher(source, [{ start: 8, end: 9 }]);
+    assertEquals(result.changed, true);
+    assert(result.source.includes("Str.clean(input)"));
+});
+
+Deno.test("function matcher: skips static method with string literal key", async () => {
+    const source = [
+        "class Foo {",
+        '    static "myMethod"(s) {',
+        "        return s.trim();",
+        "    }",
+        "}",
+        "",
+        "function run() {",
+        "    const result = input.trim();",
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(acceptAll);
+    const result = await matcher(source, [{ start: 7, end: 8 }]);
+    assertEquals(result.changed, false);
+});
+
+Deno.test("function matcher: expression search skips computed key class method", async () => {
+    const source = [
+        "class Foo {",
+        "    static clean(s) {",
+        "        return s.trim();",
+        "    }",
+        "    [computedMethod](s) {",
+        "        const result = s.trim();",
+        "    }",
+        "}",
+        "",
+        "function run() {",
+        "    const result = input.trim();",
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(acceptAll);
+    const result = await matcher(source, [{ start: 10, end: 11 }]);
+    assertEquals(result.changed, true);
+    assert(result.source.includes("Foo.clean(input)"));
+});
+
+Deno.test("function matcher: anonymous class method skipped in expression search", async () => {
+    const source = [
+        "function clean(s) {",
+        "    return s.trim().toLowerCase();",
+        "}",
+        "",
+        "export default class {",
+        "    run() {",
+        "        const sanitized = input.trim().toLowerCase();",
+        "    }",
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(acceptAll);
+    const result = await matcher(source, [{ start: 6, end: 7 }]);
+    assertEquals(result.changed, false);
+});

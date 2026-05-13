@@ -240,6 +240,94 @@ function collectFunctions(ast: any, sourceLines: string[]): FunctionInfo[] {
             this.traverse(path);
         },
 
+        visitClassMethod(path) {
+            const node = path.node;
+            if (node.kind === "constructor") {
+                this.traverse(path);
+                return;
+            }
+            if (!node.static) {
+                this.traverse(path);
+                return;
+            }
+            if (node.async || node.generator) {
+                this.traverse(path);
+                return;
+            }
+            if (!node.body?.body || node.body.body.length === 0) {
+                this.traverse(path);
+                return;
+            }
+            if (node.computed) {
+                this.traverse(path);
+                return;
+            }
+            const methodKey = node.key as any;
+            const methodName = methodKey?.name;
+            if (!methodName) {
+                this.traverse(path);
+                return;
+            }
+            const classDecl = path.parent?.parent?.node as any;
+            const className = classDecl?.id?.name;
+            if (!className) {
+                this.traverse(path);
+                return;
+            }
+
+            const bodyStatements = node.body.body;
+            const params = getParamNames(node);
+
+            const bodySource = sourceLines
+                .slice(
+                    bodyStatements[0].loc!.start.line - 1,
+                    bodyStatements[bodyStatements.length - 1].loc!.end.line,
+                )
+                .join("\n");
+
+            const { fingerprint: bodyFingerprint } = normalizeStatements(
+                bodyStatements,
+            );
+
+            let returnExprSource: string | null = null;
+            let returnExprFingerprint: string | null = null;
+            let returnExprParamMapping: Map<string, string> | null = null;
+
+            if (
+                bodyStatements.length === 1 &&
+                bodyStatements[0].type === "ReturnStatement" &&
+                bodyStatements[0].argument
+            ) {
+                const retExpr = bodyStatements[0].argument;
+                const norm = normalizeExpression(retExpr);
+                returnExprSource = print(retExpr).code;
+                returnExprFingerprint = norm.fingerprint;
+
+                const paramSet = new Set(params);
+                const mapping = new Map<string, string>();
+                for (const [orig, placeholder] of norm.identifierMap) {
+                    if (paramSet.has(orig)) {
+                        mapping.set(placeholder, orig);
+                    }
+                }
+                returnExprParamMapping = mapping;
+            }
+
+            functions.push({
+                name: `${className}.${methodName}`,
+                node,
+                bodyStatements,
+                bodySource,
+                bodyFingerprint,
+                params,
+                returnExprSource,
+                returnExprFingerprint,
+                returnExprParamMapping,
+            });
+
+            this.traverse(path);
+        },
+
         visitFunctionExpression() {
             return false;
         },
@@ -305,6 +393,19 @@ function collectSequences(
                 return;
             }
             processBody(node.body.body, node.id.name as string);
+            this.traverse(path);
+        },
+        visitClassMethod(path) {
+            const node = path.node;
+            const classDecl = path.parent?.parent?.node as any;
+            const className = classDecl?.id?.name;
+            const methodKey = node.key as any;
+            const methodName = !node.computed ? methodKey?.name : null;
+            if (!className || !methodName) {
+                this.traverse(path);
+                return;
+            }
+            processBody(node.body.body, `${className}.${methodName}`);
             this.traverse(path);
         },
         visitFunctionExpression() {
@@ -437,6 +538,21 @@ function findExpressionMatches(
             }
             for (const stmt of node.body.body) {
                 checkStatement(stmt, node.id.name as string);
+            }
+            this.traverse(path);
+        },
+        visitClassMethod(path) {
+            const node = path.node;
+            const classDecl = path.parent?.parent?.node as any;
+            const className = classDecl?.id?.name;
+            const methodKey = node.key as any;
+            const methodName = !node.computed ? methodKey?.name : null;
+            if (!className || !methodName) {
+                this.traverse(path);
+                return;
+            }
+            for (const stmt of node.body.body) {
+                checkStatement(stmt, `${className}.${methodName}`);
             }
             this.traverse(path);
         },
