@@ -860,7 +860,7 @@ export function createFunctionMatcher(
             }
 
             const reviewResult = await llm.reviewChange(
-                match.codeBlock,
+                currentSource,
                 proposedSource,
                 `replaced code at lines ${match.startLine}-${match.endLine} with call to ${match.func.name}`,
             );

@@ -415,8 +415,8 @@ export class MoonshotClient implements LLMClient {
                     `Replace this code block with a call to the existing function '${funcName}'.\n\n` +
                     `Code block:\n\`\`\`typescript\n${codeBlock.trim()}\n\`\`\`\n\n` +
                     `Function '${funcName}':\n\`\`\`typescript\n${funcSource.trim()}\n\`\`\`\n\n` +
-                    `File source:\n\`\`\`typescript\n${snippet}\n\`\`\`\n\n` +
-                    `Generate a replacement that preserves the original indentation and covers exactly the lines of the code block. Pass the replacement to the generate_call tool.`,
+                    `File source (for context only):\n\`\`\`typescript\n${snippet}\n\`\`\`\n\n` +
+                    `Output ONLY the replacement lines that will replace the code block. Do NOT output the full file, surrounding code, or any lines outside the code block. The replacement must preserve the original indentation of the code block. Pass the replacement to the generate_call tool.`,
             },
         ];
         const tool: ToolDefinition = {
@@ -456,15 +456,15 @@ export class MoonshotClient implements LLMClient {
                 role: "user",
                 content: `Review this proposed code change.\n\n` +
                     `Description: ${description}\n\n` +
-                    `Original:\n\`\`\`typescript\n${originalSource.trim()}\n\`\`\`\n\n` +
-                    `Proposed:\n\`\`\`typescript\n${proposedSource.trim()}\n\`\`\`\n\n` +
-                    `Check each of the following:\n` +
-                    `1. Every variable read in the original block that is not locally assigned is passed as a parameter or available in scope\n` +
-                    `2. Every variable assigned in the original block and used afterward is still defined\n` +
+                    `Original file:\n\`\`\`typescript\n${originalSource.trim()}\n\`\`\`\n\n` +
+                    `Modified file:\n\`\`\`typescript\n${proposedSource.trim()}\n\`\`\`\n\n` +
+                    `Both are complete files. Only the lines described in the description should differ between them. Check each of the following:\n` +
+                    `1. Every variable read in the changed lines that is not locally assigned is passed as a parameter or available in scope\n` +
+                    `2. Every variable assigned in the changed lines and used afterward is still defined\n` +
                     `3. No parameter is assigned before it is first read in the called function\n` +
-                    `4. If the original block ends with a return, the replacement also propagates that return value\n` +
-                    `5. The replacement covers exactly the lines of the original block\n` +
-                    `6. The replacement preserves the original indentation\n` +
+                    `4. If the changed lines originally ended with a return, the replacement also propagates that return value\n` +
+                    `5. Only the lines described in the description were modified — all other lines must be identical between the two files\n` +
+                    `6. The replacement preserves the original indentation of the changed lines\n` +
                     `Use the review tool to answer.`,
             },
         ];
