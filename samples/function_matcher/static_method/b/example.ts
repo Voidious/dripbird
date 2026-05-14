@@ -1,18 +1,18 @@
-class Logger {
-    static formatMessage(level: string, message: string) {
-        const timestamp = new Date().toISOString();
-        return `[${timestamp}] ${level}: ${message}`;
+class Formatter {
+    static pad(text) {
+        const trimmed = text.trim();
+        return trimmed.padStart(40, " ");
     }
 }
 
-class UserService {
-    createUser(username: string) {
-        db.insert("users", { username });
-        console.log(Logger.formatMessage("INFO", `Created user ${username}`));
+class Report {
+    renderHeader(title) {
+        db.insert("logs", { title });
+        return Formatter.pad(title);
     }
 
-    deleteUser(username: string) {
-        db.delete("users", { username });
-        console.log(Logger.formatMessage("INFO", `Deleted user ${username}`));
+    renderFooter(subtitle) {
+        db.delete("logs", { subtitle });
+        return Formatter.pad(subtitle);
     }
 }

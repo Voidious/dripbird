@@ -45,19 +45,28 @@ Deno.test("function matcher: no match when no functions in file", async () => {
     assertEquals(result.changed, false);
 });
 
-Deno.test("function matcher: no match when diff doesn't overlap function body", async () => {
+Deno.test("function matcher: body match of static method inside another class method", async () => {
     const source = [
-        "function greet(name) {",
-        '    console.log("Hello, " + name);',
+        "class Formatter {",
+        "    static pad(text) {",
+        "        const trimmed = text.trim();",
+        '        return trimmed.padStart(40, " ");',
+        "    }",
         "}",
         "",
-        "function run() {",
-        "    const x = 1;",
+        "class Report {",
+        "    renderHeader(title) {",
+        '        db.insert("logs", { title });',
+        "        const t = title.trim();",
+        '        return t.padStart(40, " ");',
+        "    }",
         "}",
     ].join("\n");
+
     const matcher = createFunctionMatcher(acceptAll);
-    const result = await matcher(source, [{ start: 5, end: 7 }]);
-    assertEquals(result.changed, false);
+    const result = await matcher(source, [{ start: 8, end: 13 }]);
+    assertEquals(result.changed, true);
+    assert(result.source.includes("Formatter.pad(title)"));
 });
 
 Deno.test("function matcher: matches identical body with different variable names", async () => {
