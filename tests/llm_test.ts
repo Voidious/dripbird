@@ -745,3 +745,178 @@ Deno.test("MoonshotClient generateCallReplacement truncates long file source", a
     );
     assertEquals(result, "foo()");
 });
+
+Deno.test("MoonshotClient callWithTool retries on malformed JSON and succeeds", async () => {
+    const messages: string[] = [];
+    let callCount = 0;
+    const fetchFn = (() => {
+        callCount++;
+        if (callCount === 1) {
+            return Promise.resolve(
+                new Response(
+                    JSON.stringify({
+                        choices: [{
+                            finish_reason: "length",
+                            message: {
+                                content: null,
+                                tool_calls: [{
+                                    function: {
+                                        name: "evaluate_match",
+                                        arguments:
+                                            '{"is_match": true, "reason": "un',
+                                    },
+                                }],
+                            },
+                        }],
+                    }),
+                ),
+            );
+        }
+        return Promise.resolve(
+            new Response(
+                JSON.stringify({
+                    choices: [{
+                        finish_reason: "stop",
+                        message: {
+                            content: null,
+                            tool_calls: [{
+                                function: {
+                                    name: "evaluate_match",
+                                    arguments: JSON.stringify({
+                                        is_match: true,
+                                        reason: "ok",
+                                    }),
+                                },
+                            }],
+                        },
+                    }],
+                }),
+            ),
+        );
+    }) as unknown as typeof fetch;
+    const client = new MoonshotClient(
+        "key",
+        "model",
+        fetchFn,
+        undefined,
+        (...args: unknown[]) => messages.push(args.join(" ")),
+    );
+    const result = await client.verifyFunctionMatch("code", "func", "file");
+    assertEquals(result.isMatch, true);
+    assertEquals(result.reason, "ok");
+    assertEquals(callCount, 2);
+    assert(messages.some((m) => m.includes("JSON parse failed on attempt 1")));
+    assert(messages.some((m) => m.includes("finish_reason=length")));
+    assert(messages.some((m) => m.includes("retrying")));
+});
+
+Deno.test("MoonshotClient callWithTool retries exhausted throws with diagnostics", async () => {
+    const messages: string[] = [];
+    const fetchFn = (() =>
+        Promise.resolve(
+            new Response(
+                JSON.stringify({
+                    choices: [{
+                        finish_reason: "length",
+                        message: {
+                            content: null,
+                            tool_calls: [{
+                                function: {
+                                    name: "evaluate_match",
+                                    arguments: '{"broken',
+                                },
+                            }],
+                        },
+                    }],
+                }),
+            ),
+        )) as unknown as typeof fetch;
+    const client = new MoonshotClient(
+        "key",
+        "model",
+        fetchFn,
+        undefined,
+        (...args: unknown[]) => messages.push(args.join(" ")),
+    );
+    await assertRejects(
+        () => client.verifyFunctionMatch("code", "func", "file"),
+        Error,
+        "Failed to parse LLM tool arguments after 3 attempts",
+    );
+    assert(messages.some((m) => m.includes("JSON parse failed after 3 attempts")));
+    assert(messages.some((m) => m.includes("finish_reason=length")));
+    assert(messages.some((m) => m.includes("raw arguments")));
+});
+
+Deno.test("MoonshotClient callWithTool retry with stats records all attempts", async () => {
+    const stats = new LLMStats();
+    const messages: string[] = [];
+    let callCount = 0;
+    const fetchFn = (() => {
+        callCount++;
+        if (callCount === 1) {
+            return Promise.resolve(
+                new Response(
+                    JSON.stringify({
+                        choices: [{
+                            message: {
+                                content: null,
+                                tool_calls: [{
+                                    function: {
+                                        name: "evaluate_match",
+                                        arguments: '{"broken',
+                                    },
+                                }],
+                            },
+                        }],
+                        usage: {
+                            prompt_tokens: 10,
+                            completion_tokens: 5,
+                            total_tokens: 15,
+                        },
+                    }),
+                ),
+            );
+        }
+        return Promise.resolve(
+            new Response(
+                JSON.stringify({
+                    choices: [{
+                        finish_reason: "stop",
+                        message: {
+                            content: null,
+                            tool_calls: [{
+                                function: {
+                                    name: "evaluate_match",
+                                    arguments: JSON.stringify({
+                                        is_match: false,
+                                        reason: "",
+                                    }),
+                                },
+                            }],
+                        },
+                    }],
+                    usage: {
+                        prompt_tokens: 8,
+                        completion_tokens: 3,
+                        total_tokens: 11,
+                    },
+                }),
+            ),
+        );
+    }) as unknown as typeof fetch;
+    const client = new MoonshotClient(
+        "key",
+        "model",
+        fetchFn,
+        stats,
+        (...args: unknown[]) => messages.push(args.join(" ")),
+    );
+    const result = await client.verifyFunctionMatch("code", "func", "file");
+    assertEquals(result.isMatch, false);
+    assertEquals(stats.callCount, 1);
+    assertEquals(stats.totalPromptTokens, 8);
+    assertEquals(stats.totalCompletionTokens, 3);
+    assert(messages.some((m) => m.includes("JSON parse failed")));
+    assert(messages.some((m) => m.includes("finish_reason=unknown")));
+});

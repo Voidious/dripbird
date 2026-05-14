@@ -135,6 +135,7 @@ interface ToolDefinition {
 
 interface ToolCallResponse {
     choices: Array<{
+        finish_reason?: string;
         message: {
             content: string | null;
             tool_calls?: Array<{
@@ -278,76 +279,118 @@ export class MoonshotClient implements LLMClient {
         messages: ChatMessage[],
         tool: ToolDefinition,
         logLabel: string,
+        maxRetries = 2,
     ): Promise<T> {
         if (this.stats) {
             this.logFn(`dripbird: llm: ${logLabel}...`);
         }
 
         const start = performance.now();
+        let attempt = 0;
 
-        const response = await this.fetchFn(
-            "https://api.moonshot.ai/v1/chat/completions",
-            {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "Authorization": `Bearer ${this.apiKey}`,
+        while (true) {
+            const response = await this.fetchFn(
+                "https://api.moonshot.ai/v1/chat/completions",
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": `Bearer ${this.apiKey}`,
+                    },
+                    body: JSON.stringify({
+                        model: this.model,
+                        messages,
+                        max_tokens: 1024,
+                        tools: [tool],
+                        tool_choice: "required",
+                        thinking: { type: "disabled" },
+                    }),
                 },
-                body: JSON.stringify({
-                    model: this.model,
-                    messages,
-                    max_tokens: 1024,
-                    tools: [tool],
-                    tool_choice: "required",
-                    thinking: { type: "disabled" },
-                }),
-            },
-        );
+            );
 
-        const data: ToolCallResponse = await response.json();
-        const durationMs = performance.now() - start;
+            const data: ToolCallResponse = await response.json();
 
-        if (!response.ok) {
-            if (this.stats) {
-                this.logFn(
-                    `dripbird: llm: API error ${response.status} after ${
-                        Math.round(durationMs)
-                    }ms`,
+            if (!response.ok) {
+                const durationMs = performance.now() - start;
+                if (this.stats) {
+                    this.logFn(
+                        `dripbird: llm: API error ${response.status} after ${
+                            Math.round(durationMs)
+                        }ms`,
+                    );
+                }
+                throw new Error(
+                    `LLM API error ${response.status}: ${JSON.stringify(data)}`,
                 );
             }
-            throw new Error(
-                `LLM API error ${response.status}: ${JSON.stringify(data)}`,
-            );
-        }
 
-        const toolCall = data?.choices?.[0]?.message?.tool_calls?.[0];
-        if (!toolCall || toolCall.function.name !== tool.function.name) {
-            if (this.stats) {
-                this.logFn(
-                    `dripbird: llm: no tool response after ${
-                        Math.round(durationMs)
-                    }ms`,
+            const toolCall = data?.choices?.[0]?.message?.tool_calls?.[0];
+            if (!toolCall || toolCall.function.name !== tool.function.name) {
+                const durationMs = performance.now() - start;
+                if (this.stats) {
+                    this.logFn(
+                        `dripbird: llm: no tool response after ${
+                            Math.round(durationMs)
+                        }ms`,
+                    );
+                }
+                throw new Error(
+                    `Unexpected LLM response: ${JSON.stringify(data)}`,
                 );
             }
-            throw new Error(
-                `Unexpected LLM response: ${JSON.stringify(data)}`,
-            );
+
+            const choice = data.choices[0];
+            const finishReason = choice.finish_reason ?? "unknown";
+            try {
+                const result = JSON.parse(
+                    toolCall.function.arguments,
+                ) as T;
+
+                const durationMs = performance.now() - start;
+                if (this.stats) {
+                    const promptTokens = data.usage?.prompt_tokens ?? 0;
+                    const completionTokens = data.usage?.completion_tokens ?? 0;
+                    this.logFn(
+                        `dripbird: llm: ${
+                            Math.round(durationMs)
+                        }ms, ${promptTokens} in, ${completionTokens} out → ${logLabel}`,
+                    );
+                    this.stats.add({
+                        durationMs,
+                        promptTokens,
+                        completionTokens,
+                    });
+                }
+
+                return result;
+            } catch (parseErr) {
+                attempt++;
+                if (attempt <= maxRetries) {
+                    this.logFn(
+                        `dripbird: llm: JSON parse failed on attempt ${attempt}/${
+                            maxRetries + 1
+                        } for ${logLabel} (finish_reason=${finishReason}, args length=${toolCall.function.arguments.length}), retrying...`,
+                    );
+                    this.logFn(
+                        `dripbird: llm: raw arguments: ${
+                            toolCall.function.arguments.slice(0, 500)
+                        }`,
+                    );
+                    continue;
+                }
+                this.logFn(
+                    `dripbird: llm: JSON parse failed after ${attempt} attempts for ${logLabel} (finish_reason=${finishReason}, args length=${toolCall.function.arguments.length})`,
+                );
+                this.logFn(
+                    `dripbird: llm: raw arguments: ${toolCall.function.arguments}`,
+                );
+                throw new Error(
+                    `Failed to parse LLM tool arguments after ${attempt} attempts (finish_reason=${finishReason}): ${
+                        (parseErr as Error).message
+                    }`,
+                );
+            }
         }
-
-        const result = JSON.parse(toolCall.function.arguments) as T;
-
-        if (this.stats) {
-            const promptTokens = data.usage?.prompt_tokens ?? 0;
-            const completionTokens = data.usage?.completion_tokens ?? 0;
-            this.logFn(
-                `dripbird: llm: ${
-                    Math.round(durationMs)
-                }ms, ${promptTokens} in, ${completionTokens} out → ${logLabel}`,
-            );
-            this.stats.add({ durationMs, promptTokens, completionTokens });
-        }
-
-        return result;
     }
 
     async verifyFunctionMatch(
