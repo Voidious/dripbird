@@ -28,6 +28,7 @@ export interface LLMClient {
         funcName: string,
         funcSource: string,
         fileSource: string,
+        previousFeedback?: string,
     ): Promise<string>;
 
     reviewChange(
@@ -447,10 +448,14 @@ export class MoonshotClient implements LLMClient {
         funcName: string,
         funcSource: string,
         fileSource: string,
+        previousFeedback?: string,
     ): Promise<string> {
         const snippet = fileSource.length > 4000
             ? fileSource.slice(0, 4000)
             : fileSource;
+        const feedbackSection = previousFeedback
+            ? `\n\nIMPORTANT: A previous attempt was rejected with this feedback. Fix the issue:\n${previousFeedback}`
+            : "";
         const messages: ChatMessage[] = [
             {
                 role: "user",
@@ -459,7 +464,7 @@ export class MoonshotClient implements LLMClient {
                     `Code block:\n\`\`\`typescript\n${codeBlock.trim()}\n\`\`\`\n\n` +
                     `Function '${funcName}':\n\`\`\`typescript\n${funcSource.trim()}\n\`\`\`\n\n` +
                     `File source (for context only):\n\`\`\`typescript\n${snippet}\n\`\`\`\n\n` +
-                    `Output ONLY the replacement lines that will replace the code block. Do NOT output the full file, surrounding code, or any lines outside the code block. The replacement must preserve the original indentation of the code block. Pass the replacement to the generate_call tool.`,
+                    `Output ONLY the replacement lines that will replace the code block. Do NOT output the full file, surrounding code, or any lines outside the code block. The replacement must preserve the original indentation of the code block. Pass the replacement to the generate_call tool.${feedbackSection}`,
             },
         ];
         const tool: ToolDefinition = {

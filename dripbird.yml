@@ -7,6 +7,9 @@ max_function_lines: 75
 # retry count for LLM calls when naming split helper functions
 function_splitter_retries: 2
 
+# retry count for function matcher edits that fail LLM verification
+function_matcher_retries: 2
+
 # LLM provider ("moonshot" or "openai")
 provider: moonshot
 

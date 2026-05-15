@@ -86,6 +86,7 @@ function printConfig(config: Config): void {
         ["model", config.model],
         ["max_function_lines", String(config.max_function_lines)],
         ["function_splitter_retries", String(config.function_splitter_retries)],
+        ["function_matcher_retries", String(config.function_matcher_retries)],
         ["verbose", String(config.verbose)],
     ];
     const maxKeyLen = Math.max(...entries.map(([k]) => k.length));
@@ -148,7 +149,7 @@ export async function runInDir(
         });
         namedRefactors.push({
             name: "function_matcher",
-            refactor: createFunctionMatcher(llm),
+            refactor: createFunctionMatcher(config, llm),
         });
     }
 

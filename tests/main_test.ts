@@ -855,6 +855,7 @@ Deno.test("LLMStats and MoonshotClient full coverage in main process", async () 
     const config = {
         max_function_lines: 75,
         function_splitter_retries: 2,
+        function_matcher_retries: 2,
         provider: "moonshot",
         model: "m",
         enabled_refactors: [],

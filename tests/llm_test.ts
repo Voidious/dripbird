@@ -217,6 +217,7 @@ Deno.test("createLLMClient passes stats to client", async () => {
         const config = {
             max_function_lines: 75,
             function_splitter_retries: 2,
+            function_matcher_retries: 2,
             provider: "moonshot",
             model: "test-model",
             enabled_refactors: [],
@@ -303,6 +304,7 @@ Deno.test("createLLMClient returns null without API key", () => {
         const config = {
             max_function_lines: 75,
             function_splitter_retries: 2,
+            function_matcher_retries: 2,
             provider: "moonshot",
             model: "kimi-k2.5",
             enabled_refactors: [],
@@ -324,6 +326,7 @@ Deno.test("createLLMClient uses env var API key", () => {
         const config = {
             max_function_lines: 75,
             function_splitter_retries: 2,
+            function_matcher_retries: 2,
             provider: "moonshot",
             model: "kimi-k2.5",
             enabled_refactors: [],
@@ -348,6 +351,7 @@ Deno.test("createLLMClient uses options API key over env", () => {
         const config = {
             max_function_lines: 75,
             function_splitter_retries: 2,
+            function_matcher_retries: 2,
             provider: "moonshot",
             model: "kimi-k2.5",
             enabled_refactors: [],
@@ -371,6 +375,7 @@ Deno.test("createLLMClient passes custom fetchFn", async () => {
     const config = {
         max_function_lines: 75,
         function_splitter_retries: 2,
+        function_matcher_retries: 2,
         provider: "moonshot",
         model: "test-model",
         enabled_refactors: [],
@@ -541,6 +546,93 @@ Deno.test("MoonshotClient generateCallReplacement returns replacement", async ()
         "source",
     );
     assertEquals(result, "    sendGreeting(conn);\n");
+});
+
+Deno.test("MoonshotClient generateCallReplacement includes previousFeedback in prompt", async () => {
+    const captured: { req: Request | null } = { req: null };
+    const fetchFn = ((input: RequestInfo | URL, init?: RequestInit) => {
+        captured.req = new Request(input as URL, init);
+        return Promise.resolve(
+            new Response(
+                JSON.stringify({
+                    choices: [{
+                        message: {
+                            content: null,
+                            tool_calls: [{
+                                function: {
+                                    name: "generate_call",
+                                    arguments: JSON.stringify({
+                                        replacement: "    sendGreeting(conn);\n",
+                                    }),
+                                },
+                            }],
+                        },
+                    }],
+                    usage: {
+                        prompt_tokens: 10,
+                        completion_tokens: 5,
+                        total_tokens: 15,
+                    },
+                }),
+            ),
+        );
+    }) as unknown as typeof fetch;
+
+    const client = new MoonshotClient("key", "model", fetchFn);
+    const result = await client.generateCallReplacement(
+        "conn.send('hi');",
+        "sendGreeting",
+        "function sendGreeting(c) { c.send('hi'); }",
+        "source",
+        "wrong indentation",
+    );
+    assertEquals(result, "    sendGreeting(conn);\n");
+
+    const body = await captured.req!.json();
+    assert(body.messages[0].content.includes("previous attempt was rejected"));
+    assert(body.messages[0].content.includes("wrong indentation"));
+});
+
+Deno.test("MoonshotClient generateCallReplacement omits feedback section when no previousFeedback", async () => {
+    const captured: { req: Request | null } = { req: null };
+    const fetchFn = ((input: RequestInfo | URL, init?: RequestInit) => {
+        captured.req = new Request(input as URL, init);
+        return Promise.resolve(
+            new Response(
+                JSON.stringify({
+                    choices: [{
+                        message: {
+                            content: null,
+                            tool_calls: [{
+                                function: {
+                                    name: "generate_call",
+                                    arguments: JSON.stringify({
+                                        replacement: "    sendGreeting(conn);\n",
+                                    }),
+                                },
+                            }],
+                        },
+                    }],
+                    usage: {
+                        prompt_tokens: 10,
+                        completion_tokens: 5,
+                        total_tokens: 15,
+                    },
+                }),
+            ),
+        );
+    }) as unknown as typeof fetch;
+
+    const client = new MoonshotClient("key", "model", fetchFn);
+    await client.generateCallReplacement(
+        "conn.send('hi');",
+        "sendGreeting",
+        "function sendGreeting(c) { c.send('hi'); }",
+        "source",
+    );
+
+    const body = await captured.req!.json();
+    assert(!body.messages[0].content.includes("previous attempt was rejected"));
 });
 
 Deno.test("MoonshotClient reviewChange accepts", async () => {

@@ -54,6 +54,7 @@ function makeSource(fnCode: string): string {
 const defaultConfig = {
     max_function_lines: 10,
     function_splitter_retries: 2,
+    function_matcher_retries: 2,
     provider: "moonshot",
     model: "kimi-k2.5",
     enabled_refactors: [],

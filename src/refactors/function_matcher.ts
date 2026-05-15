@@ -2,6 +2,7 @@
 import { parse, print, visit } from "recast";
 import * as babelParser from "@babel/parser";
 import type { ChangedRange } from "../diff.ts";
+import type { Config } from "../config.ts";
 import type { Refactor, RefactorContext, RefactorResult } from "../engine.ts";
 import type { LLMClient } from "../llm.ts";
 
@@ -670,6 +671,7 @@ function buildAssignmentCall(
 }
 
 export function createFunctionMatcher(
+    config: Config,
     llm: LLMClient,
 ): Refactor {
     return async (
@@ -826,52 +828,70 @@ export function createFunctionMatcher(
                 continue;
             }
 
-            let replacement: string;
-            if (match.algoReplacement) {
-                replacement = match.algoReplacement;
-            } else {
-                replacement = await llm.generateCallReplacement(
-                    match.codeBlock,
-                    match.func.name,
-                    funcSource,
-                    source,
+            const maxAttempts = config.function_matcher_retries + 1;
+            let accepted = false;
+            let lastFeedback = "";
+
+            for (let attempt = 0; attempt < maxAttempts; attempt++) {
+                let replacement: string;
+                if (attempt === 0 && match.algoReplacement) {
+                    replacement = match.algoReplacement;
+                } else {
+                    replacement = await llm.generateCallReplacement(
+                        match.codeBlock,
+                        match.func.name,
+                        funcSource,
+                        source,
+                        lastFeedback || undefined,
+                    );
+                }
+
+                const proposedSource = applyTextEdit(
+                    currentSource,
+                    match.startLine,
+                    match.endLine,
+                    replacement,
                 );
-            }
 
-            const proposedSource = applyTextEdit(
-                currentSource,
-                match.startLine,
-                match.endLine,
-                replacement,
-            );
+                let parseOk = false;
+                try {
+                    parseSource(proposedSource);
+                    parseOk = true;
+                } catch {
+                    parseOk = false;
+                }
+                if (!parseOk) {
+                    log?.(
+                        `dripbird: function_matcher: replacement didn't parse (attempt ${
+                            attempt + 1
+                        }/${maxAttempts}, lines ${match.startLine}-${match.endLine} → ${match.func.name})`,
+                    );
+                    lastFeedback =
+                        "The previous replacement did not produce valid syntax. The result could not be parsed.";
+                    continue;
+                }
 
-            let parseOk = false;
-            try {
-                parseSource(proposedSource);
-                parseOk = true;
-            } catch {
-                parseOk = false;
-            }
-            if (!parseOk) {
-                log?.(
-                    `dripbird: function_matcher: replacement didn't parse (lines ${match.startLine}-${match.endLine} → ${match.func.name})`,
+                const reviewResult = await llm.reviewChange(
+                    currentSource,
+                    proposedSource,
+                    `replaced code at lines ${match.startLine}-${match.endLine} with call to ${match.func.name}`,
                 );
-                continue;
+                if (!reviewResult.accepted) {
+                    log?.(
+                        `dripbird: function_matcher: LLM review rejected (attempt ${
+                            attempt + 1
+                        }/${maxAttempts}, lines ${match.startLine}-${match.endLine} → ${match.func.name}): ${reviewResult.feedback}`,
+                    );
+                    lastFeedback = reviewResult.feedback;
+                    continue;
+                }
+
+                currentSource = proposedSource;
+                accepted = true;
+                break;
             }
 
-            const reviewResult = await llm.reviewChange(
-                currentSource,
-                proposedSource,
-                `replaced code at lines ${match.startLine}-${match.endLine} with call to ${match.func.name}`,
-            );
-            if (!reviewResult.accepted) {
-                log?.(
-                    `dripbird: function_matcher: LLM review rejected (lines ${match.startLine}-${match.endLine} → ${match.func.name}): ${reviewResult.feedback}`,
-                );
-                continue;
-            }
-
-            currentSource = proposedSource;
+            if (!accepted) continue;
             claimedRanges.push({
                 start: match.startLine,
                 end: match.endLine,
