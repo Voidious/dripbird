@@ -7,14 +7,17 @@ max_function_lines: 75
 # retry count for LLM calls when naming split helper functions
 function_splitter_retries: 2
 
-# LLM provider ("moonshot" or "openai")
+# retry count for function matcher edits that fail LLM verification
+function_matcher_retries: 2
+
+# LLM provider (currently only "moonshot")
 provider: moonshot
 
 # LLM model name
 model: kimi-k2.5
 
 # only run these refactors (empty = all enabled)
-# available: if_not_else, function_splitter
+# available: if_not_else, function_splitter, function_matcher
 enabled_refactors: []
 
 # exclude these refactors (empty = none disabled)

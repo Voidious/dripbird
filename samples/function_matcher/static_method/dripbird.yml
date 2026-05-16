@@ -1,0 +1,2 @@
+enabled_refactors:
+    - function_matcher

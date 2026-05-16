@@ -8,6 +8,7 @@ export interface RefactorResult {
 
 export interface RefactorContext {
     filePath: string;
+    log?: (msg: string) => void;
 }
 
 export type Refactor = (

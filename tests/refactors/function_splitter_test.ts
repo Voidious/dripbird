@@ -22,6 +22,18 @@ function mockLLM(name: string): LLMClient {
         async nameFunction(_context: string, _params: string[]) {
             return name;
         },
+        // deno-lint-ignore require-await
+        async verifyFunctionMatch() {
+            return { isMatch: false, reason: "mock" };
+        },
+        // deno-lint-ignore require-await
+        async generateCallReplacement() {
+            return "";
+        },
+        // deno-lint-ignore require-await
+        async reviewChange() {
+            return { accepted: true, feedback: "" };
+        },
     };
 }
 
@@ -42,10 +54,12 @@ function makeSource(fnCode: string): string {
 const defaultConfig = {
     max_function_lines: 10,
     function_splitter_retries: 2,
+    function_matcher_retries: 2,
     provider: "moonshot",
     model: "kimi-k2.5",
     enabled_refactors: [],
     disabled_refactors: [],
+    verbose: false,
 };
 
 function fixedRandom(values: number[]): () => number {
@@ -200,6 +214,18 @@ Deno.test("function splitter passes free variables as params", async () => {
             capturedParams = params;
             return "helper";
         },
+        // deno-lint-ignore require-await
+        async verifyFunctionMatch() {
+            return { isMatch: false, reason: "mock" };
+        },
+        // deno-lint-ignore require-await
+        async generateCallReplacement() {
+            return "";
+        },
+        // deno-lint-ignore require-await
+        async reviewChange() {
+            return { accepted: true, feedback: "" };
+        },
     };
     const splitter = createFunctionSplitter(
         defaultConfig,
@@ -228,6 +254,18 @@ Deno.test("function splitter retries on LLM failure", async () => {
             if (callCount < 3) throw new Error("LLM API error 500");
             return `helper${callCount}`;
         },
+        // deno-lint-ignore require-await
+        async verifyFunctionMatch() {
+            return { isMatch: false, reason: "mock" };
+        },
+        // deno-lint-ignore require-await
+        async generateCallReplacement() {
+            return "";
+        },
+        // deno-lint-ignore require-await
+        async reviewChange() {
+            return { accepted: true, feedback: "" };
+        },
     };
     const splitter = createFunctionSplitter(
         defaultConfig,
@@ -254,6 +292,18 @@ Deno.test("function splitter gives up after retries exhausted", async () => {
         async nameFunction(_ctx: string, _params: string[]) {
             callCount++;
             throw new Error("LLM API error 500");
+        },
+        // deno-lint-ignore require-await
+        async verifyFunctionMatch() {
+            return { isMatch: false, reason: "mock" };
+        },
+        // deno-lint-ignore require-await
+        async generateCallReplacement() {
+            return "";
+        },
+        // deno-lint-ignore require-await
+        async reviewChange() {
+            return { accepted: true, feedback: "" };
         },
     };
     const splitter = createFunctionSplitter(
@@ -624,6 +674,18 @@ Deno.test("function splitter selects split point with fewest params", async () =
         async nameFunction(_ctx: string, _params: string[]) {
             callCount++;
             return "helper";
+        },
+        // deno-lint-ignore require-await
+        async verifyFunctionMatch() {
+            return { isMatch: false, reason: "mock" };
+        },
+        // deno-lint-ignore require-await
+        async generateCallReplacement() {
+            return "";
+        },
+        // deno-lint-ignore require-await
+        async reviewChange() {
+            return { accepted: true, feedback: "" };
         },
     };
     const splitter = createFunctionSplitter(
@@ -1021,6 +1083,18 @@ Deno.test("function splitter with multiple candidates processes all", async () =
             callCount++;
             return `helper${callCount}`;
         },
+        // deno-lint-ignore require-await
+        async verifyFunctionMatch() {
+            return { isMatch: false, reason: "mock" };
+        },
+        // deno-lint-ignore require-await
+        async generateCallReplacement() {
+            return "";
+        },
+        // deno-lint-ignore require-await
+        async reviewChange() {
+            return { accepted: true, feedback: "" };
+        },
     };
     const splitter = createFunctionSplitter(
         defaultConfig,
@@ -1146,6 +1220,18 @@ Deno.test("function splitter rejects forbidden name and retries", async () => {
             if (callCount === 1) return "existingFunc";
             return `goodHelper${callCount}`;
         },
+        // deno-lint-ignore require-await
+        async verifyFunctionMatch() {
+            return { isMatch: false, reason: "mock" };
+        },
+        // deno-lint-ignore require-await
+        async generateCallReplacement() {
+            return "";
+        },
+        // deno-lint-ignore require-await
+        async reviewChange() {
+            return { accepted: true, feedback: "" };
+        },
     };
     const splitter = createFunctionSplitter(
         defaultConfig,
@@ -1176,6 +1262,18 @@ Deno.test("function splitter rejects keyword name and retries", async () => {
             if (callCount === 1) return "return";
             return `validName${callCount}`;
         },
+        // deno-lint-ignore require-await
+        async verifyFunctionMatch() {
+            return { isMatch: false, reason: "mock" };
+        },
+        // deno-lint-ignore require-await
+        async generateCallReplacement() {
+            return "";
+        },
+        // deno-lint-ignore require-await
+        async reviewChange() {
+            return { accepted: true, feedback: "" };
+        },
     };
     const splitter = createFunctionSplitter(
         defaultConfig,
@@ -1204,6 +1302,18 @@ Deno.test("function splitter rejects function-scoped variable name", async () =>
             if (callCount === 1) return "v5";
             return `computeResult${callCount}`;
         },
+        // deno-lint-ignore require-await
+        async verifyFunctionMatch() {
+            return { isMatch: false, reason: "mock" };
+        },
+        // deno-lint-ignore require-await
+        async generateCallReplacement() {
+            return "";
+        },
+        // deno-lint-ignore require-await
+        async reviewChange() {
+            return { accepted: true, feedback: "" };
+        },
     };
     const splitter = createFunctionSplitter(
         defaultConfig,
@@ -1231,6 +1341,18 @@ Deno.test("function splitter gives up when all attempts return forbidden names",
             callCount++;
             return "v5";
         },
+        // deno-lint-ignore require-await
+        async verifyFunctionMatch() {
+            return { isMatch: false, reason: "mock" };
+        },
+        // deno-lint-ignore require-await
+        async generateCallReplacement() {
+            return "";
+        },
+        // deno-lint-ignore require-await
+        async reviewChange() {
+            return { accepted: true, feedback: "" };
+        },
     };
     const splitter = createFunctionSplitter(
         defaultConfig,
@@ -1251,6 +1373,18 @@ Deno.test("function splitter passes forbidden names to LLM", async () => {
         async nameFunction(_ctx: string, _params: string[], forbidden?: string[]) {
             capturedForbidden = forbidden;
             return "helper";
+        },
+        // deno-lint-ignore require-await
+        async verifyFunctionMatch() {
+            return { isMatch: false, reason: "mock" };
+        },
+        // deno-lint-ignore require-await
+        async generateCallReplacement() {
+            return "";
+        },
+        // deno-lint-ignore require-await
+        async reviewChange() {
+            return { accepted: true, feedback: "" };
         },
     };
     const splitter = createFunctionSplitter(
@@ -1323,6 +1457,18 @@ Deno.test("function splitter with low coverage restricts split to diff", async (
         async nameFunction(_ctx: string, params: string[]) {
             capturedParams = params;
             return "helper";
+        },
+        // deno-lint-ignore require-await
+        async verifyFunctionMatch() {
+            return { isMatch: false, reason: "mock" };
+        },
+        // deno-lint-ignore require-await
+        async generateCallReplacement() {
+            return "";
+        },
+        // deno-lint-ignore require-await
+        async reviewChange() {
+            return { accepted: true, feedback: "" };
         },
     };
     const splitter = createFunctionSplitter(
@@ -1412,6 +1558,18 @@ Deno.test("function splitter recursively splits helper when over limit", async (
             callCount++;
             return `helper${callCount}`;
         },
+        // deno-lint-ignore require-await
+        async verifyFunctionMatch() {
+            return { isMatch: false, reason: "mock" };
+        },
+        // deno-lint-ignore require-await
+        async generateCallReplacement() {
+            return "";
+        },
+        // deno-lint-ignore require-await
+        async reviewChange() {
+            return { accepted: true, feedback: "" };
+        },
     };
     const splitter = createFunctionSplitter(
         { ...defaultConfig, max_function_lines: 15 },
@@ -1440,6 +1598,18 @@ Deno.test("function splitter prefers split point that avoids re-split", async ()
             callCount++;
             return `helper${callCount}`;
         },
+        // deno-lint-ignore require-await
+        async verifyFunctionMatch() {
+            return { isMatch: false, reason: "mock" };
+        },
+        // deno-lint-ignore require-await
+        async generateCallReplacement() {
+            return "";
+        },
+        // deno-lint-ignore require-await
+        async reviewChange() {
+            return { accepted: true, feedback: "" };
+        },
     };
     const splitter = createFunctionSplitter(
         { ...defaultConfig, max_function_lines: 10 },
@@ -1466,6 +1636,18 @@ Deno.test("function splitter respects depth limit for very long functions", asyn
         async nameFunction(_ctx: string, _params: string[]) {
             callCount++;
             return `helper${callCount}`;
+        },
+        // deno-lint-ignore require-await
+        async verifyFunctionMatch() {
+            return { isMatch: false, reason: "mock" };
+        },
+        // deno-lint-ignore require-await
+        async generateCallReplacement() {
+            return "";
+        },
+        // deno-lint-ignore require-await
+        async reviewChange() {
+            return { accepted: true, feedback: "" };
         },
     };
     const splitter = createFunctionSplitter(
@@ -1501,6 +1683,18 @@ Deno.test("function splitter does not re-split original when only modification i
             callCount++;
             return `helper${callCount}`;
         },
+        // deno-lint-ignore require-await
+        async verifyFunctionMatch() {
+            return { isMatch: false, reason: "mock" };
+        },
+        // deno-lint-ignore require-await
+        async generateCallReplacement() {
+            return "";
+        },
+        // deno-lint-ignore require-await
+        async reviewChange() {
+            return { accepted: true, feedback: "" };
+        },
     };
     const splitter = createFunctionSplitter(
         defaultConfig,
@@ -1527,6 +1721,18 @@ Deno.test("function splitter re-splits original with high coverage when still ov
         async nameFunction(_ctx: string, _params: string[]) {
             callCount++;
             return `helper${callCount}`;
+        },
+        // deno-lint-ignore require-await
+        async verifyFunctionMatch() {
+            return { isMatch: false, reason: "mock" };
+        },
+        // deno-lint-ignore require-await
+        async generateCallReplacement() {
+            return "";
+        },
+        // deno-lint-ignore require-await
+        async reviewChange() {
+            return { accepted: true, feedback: "" };
         },
     };
     const splitter = createFunctionSplitter(
@@ -1557,6 +1763,18 @@ ${lines.join("\n")}
         async nameFunction(_ctx: string, _params: string[]) {
             callCount++;
             return `step${callCount}`;
+        },
+        // deno-lint-ignore require-await
+        async verifyFunctionMatch() {
+            return { isMatch: false, reason: "mock" };
+        },
+        // deno-lint-ignore require-await
+        async generateCallReplacement() {
+            return "";
+        },
+        // deno-lint-ignore require-await
+        async reviewChange() {
+            return { accepted: true, feedback: "" };
         },
     };
     const splitter = createFunctionSplitter(
@@ -1715,6 +1933,18 @@ Deno.test("function splitter preserves types through recursive splits", async ()
         async nameFunction(_ctx: string, _params: string[]) {
             callCount++;
             return `helper${callCount}`;
+        },
+        // deno-lint-ignore require-await
+        async verifyFunctionMatch() {
+            return { isMatch: false, reason: "mock" };
+        },
+        // deno-lint-ignore require-await
+        async generateCallReplacement() {
+            return "";
+        },
+        // deno-lint-ignore require-await
+        async reviewChange() {
+            return { accepted: true, feedback: "" };
         },
     };
     const splitter = createFunctionSplitter(

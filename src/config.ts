@@ -4,10 +4,12 @@ import type { NamedRefactor } from "./engine.ts";
 export interface Config {
     max_function_lines: number;
     function_splitter_retries: number;
+    function_matcher_retries: number;
     provider: string;
     model: string;
     enabled_refactors: string[];
     disabled_refactors: string[];
+    verbose: boolean;
 }
 
 export function filterRefactors(
@@ -30,10 +32,12 @@ export function filterRefactors(
 const DEFAULTS: Config = {
     max_function_lines: 75,
     function_splitter_retries: 2,
+    function_matcher_retries: 2,
     provider: "moonshot",
     model: "kimi-k2.5",
     enabled_refactors: [],
     disabled_refactors: [],
+    verbose: false,
 };
 
 function readYamlFile(filePath: string): Record<string, unknown> | null {
@@ -68,6 +72,9 @@ function mergeConfig(
         if (typeof override.function_splitter_retries === "number") {
             result.function_splitter_retries = override.function_splitter_retries;
         }
+        if (typeof override.function_matcher_retries === "number") {
+            result.function_matcher_retries = override.function_matcher_retries;
+        }
         if (typeof override.provider === "string") {
             result.provider = override.provider;
         }
@@ -79,6 +86,9 @@ function mergeConfig(
         }
         if (isStringArray(override.disabled_refactors)) {
             result.disabled_refactors = override.disabled_refactors;
+        }
+        if (typeof override.verbose === "boolean") {
+            result.verbose = override.verbose;
         }
     }
     return result;

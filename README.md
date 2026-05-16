@@ -73,10 +73,12 @@ Local overrides take precedence over committed settings.
 | --------------------------- | ------------- | ----------------------------------------------------------------------------------------- |
 | `max_function_lines`        | `75`          | Line count threshold above which the function splitter will consider splitting a function |
 | `function_splitter_retries` | `2`           | Number of LLM retry attempts when naming a helper function                                |
+| `function_matcher_retries`  | `2`           | Number of LLM retry attempts when a function matcher edit fails verification              |
 | `provider`                  | `"moonshot"`  | LLM provider (currently only `"moonshot"`)                                                |
 | `model`                     | `"kimi-k2.5"` | LLM model name to use                                                                     |
 | `enabled_refactors`         | `[]`          | If non-empty, only these refactors will run                                               |
 | `disabled_refactors`        | `[]`          | These refactors will be skipped                                                           |
+| `verbose`                   | `false`       | Print detailed log output for each refactor                                               |
 
 ### Example `dripbird.yml`
 
@@ -89,15 +91,15 @@ disabled_refactors:
 
 ### LLM Setup
 
-The function splitter refactor requires a Moonshot AI API key. Set the
-`MOONSHOT_API_KEY` environment variable:
+The function splitter and function matcher refactors require a Moonshot AI API key.
+Set the `MOONSHOT_API_KEY` environment variable:
 
 ```bash
 export MOONSHOT_API_KEY="your-api-key-here"
 ```
 
-If the API key is not set, the function splitter is automatically disabled. All
-other refactors (e.g., flip negated if/else) work without LLM access.
+If the API key is not set, both are automatically disabled. All other refactors
+(e.g., flip negated if/else) work without LLM access.
 
 ## Refactors
 
@@ -189,6 +191,57 @@ Skipped when:
 - The function contains nested function declarations
 - No LLM API key is configured (`MOONSHOT_API_KEY`)
 
+### 3. Function matcher
+
+**Replaces duplicate code with calls to existing functions.**
+
+When a code block within the diff is semantically identical to an existing function
+body (ignoring variable names), dripbird replaces it with a call to that function.
+It uses fingerprint-based matching to find candidates and LLM verification to
+confirm the match is semantically correct.
+
+Works on standalone function declarations and static class methods. It matches both
+full statement sequences and single return expressions against existing function
+bodies.
+
+**Before:**
+
+```typescript
+function sendWelcomeEmail(recipient: string) {
+    const subject = "Welcome!";
+    const body = `Hello ${recipient}, thanks for signing up.`;
+    smtp.send(recipient, subject, body);
+}
+
+function registerUser(username: string, email: string) {
+    db.insert("users", { username, email });
+    const subject = "Welcome!";
+    const body = `Hello ${email}, thanks for signing up.`;
+    smtp.send(email, subject, body);
+}
+```
+
+**After:**
+
+```typescript
+function sendWelcomeEmail(recipient: string) {
+    const subject = "Welcome!";
+    const body = `Hello ${recipient}, thanks for signing up.`;
+    smtp.send(recipient, subject, body);
+}
+
+function registerUser(username: string, email: string) {
+    db.insert("users", { username, email });
+    sendWelcomeEmail(email);
+}
+```
+
+Skipped when:
+
+- The matching code is inside the same function it would call
+- The LLM rejects the match as not semantically equivalent
+- No LLM API key is configured (`MOONSHOT_API_KEY`)
+
 ## Architecture
 
 ```
@@ -205,18 +258,22 @@ src/cli.ts                 Entry point: reads stdin, calls run()
                 │
                 ├── src/llm.ts     createLLMClient(): Moonshot AI integration
                 │
+                ├── src/type_checker.ts  TypeCheckerImpl: TypeScript type checking
+                │
                 └── src/engine.ts  runRefactors(): chains refactors sequentially
                         │
                         └── src/refactors/
                                 ├── if_not_else.ts         Flip negated if/else
-                                └── function_splitter.ts   Split long functions (LLM-assisted)
+                                ├── function_splitter.ts   Split long functions (LLM-assisted)
+                                └── function_matcher.ts    Replace duplicate code with function calls (LLM-assisted)
 ```
 
 ### Adding a new refactor
 
 1. Create `src/refactors/my_refactor.ts` implementing the `Refactor` type from
    `engine.ts`.
-2. The function receives `(source: string, ranges: ChangedRange[])` and returns
+2. The function receives
+   `(source: string, ranges: ChangedRange[], context?: RefactorContext)` and returns
    `{ changed, source, description }` (sync or async).
 3. Check `inRange(node.loc.start.line, node.loc.end.line, ranges)` to only touch
    changed regions.

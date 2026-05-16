@@ -217,10 +217,12 @@ Deno.test("createLLMClient passes stats to client", async () => {
         const config = {
             max_function_lines: 75,
             function_splitter_retries: 2,
+            function_matcher_retries: 2,
             provider: "moonshot",
             model: "test-model",
             enabled_refactors: [],
             disabled_refactors: [],
+            verbose: false,
         };
         const client = createLLMClient(config, {
             apiKey: "key",
@@ -302,10 +304,12 @@ Deno.test("createLLMClient returns null without API key", () => {
         const config = {
             max_function_lines: 75,
             function_splitter_retries: 2,
+            function_matcher_retries: 2,
             provider: "moonshot",
             model: "kimi-k2.5",
             enabled_refactors: [],
             disabled_refactors: [],
+            verbose: false,
         };
         const client = createLLMClient(config);
         assertEquals(client, null);
@@ -322,10 +326,12 @@ Deno.test("createLLMClient uses env var API key", () => {
         const config = {
             max_function_lines: 75,
             function_splitter_retries: 2,
+            function_matcher_retries: 2,
             provider: "moonshot",
             model: "kimi-k2.5",
             enabled_refactors: [],
             disabled_refactors: [],
+            verbose: false,
         };
         const client = createLLMClient(config);
         assert(client instanceof MoonshotClient);
@@ -345,10 +351,12 @@ Deno.test("createLLMClient uses options API key over env", () => {
         const config = {
             max_function_lines: 75,
             function_splitter_retries: 2,
+            function_matcher_retries: 2,
             provider: "moonshot",
             model: "kimi-k2.5",
             enabled_refactors: [],
             disabled_refactors: [],
+            verbose: false,
         };
         const client = createLLMClient(config, {
             apiKey: "options-key",
@@ -367,10 +375,12 @@ Deno.test("createLLMClient passes custom fetchFn", async () => {
     const config = {
         max_function_lines: 75,
         function_splitter_retries: 2,
+        function_matcher_retries: 2,
         provider: "moonshot",
         model: "test-model",
         enabled_refactors: [],
         disabled_refactors: [],
+        verbose: false,
     };
     const client = createLLMClient(config, {
         apiKey: "key",
@@ -454,4 +464,551 @@ Deno.test("MoonshotClient omits forbidden names when not provided", async () => 
 
     const body = await captured.req!.json();
     assert(!body.messages[1].content.includes("Forbidden names"));
+});
+
+function mockToolFetch(
+    toolName: string,
+    toolArgs: Record<string, unknown>,
+    promptTokens = 10,
+    completionTokens = 5,
+): typeof fetch {
+    return (() => {
+        const args = JSON.stringify(toolArgs);
+        return Promise.resolve(
+            new Response(
+                JSON.stringify({
+                    choices: [{
+                        message: {
+                            content: null,
+                            tool_calls: [{
+                                function: { name: toolName, arguments: args },
+                            }],
+                        },
+                    }],
+                    usage: {
+                        prompt_tokens: promptTokens,
+                        completion_tokens: completionTokens,
+                        total_tokens: promptTokens + completionTokens,
+                    },
+                }),
+            ),
+        );
+    }) as unknown as typeof fetch;
+}
+
+Deno.test("MoonshotClient verifyFunctionMatch returns match result", async () => {
+    const client = new MoonshotClient(
+        "key",
+        "model",
+        mockToolFetch("evaluate_match", {
+            is_match: true,
+            reason: "same logic",
+        }),
+    );
+    const result = await client.verifyFunctionMatch(
+        "const x = foo();",
+        "function bar() { return foo(); }",
+        "full source",
+    );
+    assertEquals(result.isMatch, true);
+    assertEquals(result.reason, "same logic");
+});
+
+Deno.test("MoonshotClient verifyFunctionMatch returns no match", async () => {
+    const client = new MoonshotClient(
+        "key",
+        "model",
+        mockToolFetch("evaluate_match", {
+            is_match: false,
+            reason: "different ops",
+        }),
+    );
+    const result = await client.verifyFunctionMatch(
+        "const x = 1;",
+        "function bar() { return 2; }",
+        "source",
+    );
+    assertEquals(result.isMatch, false);
+});
+
+Deno.test("MoonshotClient generateCallReplacement returns replacement", async () => {
+    const client = new MoonshotClient(
+        "key",
+        "model",
+        mockToolFetch("generate_call", {
+            replacement: "    sendGreeting(conn);\n",
+        }),
+    );
+    const result = await client.generateCallReplacement(
+        "conn.send('hi');",
+        "sendGreeting",
+        "function sendGreeting(c) { c.send('hi'); }",
+        "source",
+    );
+    assertEquals(result, "    sendGreeting(conn);\n");
+});
+
+Deno.test("MoonshotClient generateCallReplacement includes previousFeedback in prompt", async () => {
+    const captured: { req: Request | null } = { req: null };
+    const fetchFn = ((input: RequestInfo | URL, init?: RequestInit) => {
+        captured.req = new Request(input as URL, init);
+        return Promise.resolve(
+            new Response(
+                JSON.stringify({
+                    choices: [{
+                        message: {
+                            content: null,
+                            tool_calls: [{
+                                function: {
+                                    name: "generate_call",
+                                    arguments: JSON.stringify({
+                                        replacement: "    sendGreeting(conn);\n",
+                                    }),
+                                },
+                            }],
+                        },
+                    }],
+                    usage: {
+                        prompt_tokens: 10,
+                        completion_tokens: 5,
+                        total_tokens: 15,
+                    },
+                }),
+            ),
+        );
+    }) as unknown as typeof fetch;
+
+    const client = new MoonshotClient("key", "model", fetchFn);
+    const result = await client.generateCallReplacement(
+        "conn.send('hi');",
+        "sendGreeting",
+        "function sendGreeting(c) { c.send('hi'); }",
+        "source",
+        "wrong indentation",
+    );
+    assertEquals(result, "    sendGreeting(conn);\n");
+
+    const body = await captured.req!.json();
+    assert(body.messages[0].content.includes("previous attempt was rejected"));
+    assert(body.messages[0].content.includes("wrong indentation"));
+});
+
+Deno.test("MoonshotClient generateCallReplacement omits feedback section when no previousFeedback", async () => {
+    const captured: { req: Request | null } = { req: null };
+    const fetchFn = ((input: RequestInfo | URL, init?: RequestInit) => {
+        captured.req = new Request(input as URL, init);
+        return Promise.resolve(
+            new Response(
+                JSON.stringify({
+                    choices: [{
+                        message: {
+                            content: null,
+                            tool_calls: [{
+                                function: {
+                                    name: "generate_call",
+                                    arguments: JSON.stringify({
+                                        replacement: "    sendGreeting(conn);\n",
+                                    }),
+                                },
+                            }],
+                        },
+                    }],
+                    usage: {
+                        prompt_tokens: 10,
+                        completion_tokens: 5,
+                        total_tokens: 15,
+                    },
+                }),
+            ),
+        );
+    }) as unknown as typeof fetch;
+
+    const client = new MoonshotClient("key", "model", fetchFn);
+    await client.generateCallReplacement(
+        "conn.send('hi');",
+        "sendGreeting",
+        "function sendGreeting(c) { c.send('hi'); }",
+        "source",
+    );
+
+    const body = await captured.req!.json();
+    assert(!body.messages[0].content.includes("previous attempt was rejected"));
+});
+
+Deno.test("MoonshotClient reviewChange accepts", async () => {
+    const client = new MoonshotClient(
+        "key",
+        "model",
+        mockToolFetch("review", { accepted: true, feedback: "" }),
+    );
+    const result = await client.reviewChange(
+        "original",
+        "proposed",
+        "test change",
+    );
+    assertEquals(result.accepted, true);
+    assertEquals(result.feedback, "");
+});
+
+Deno.test("MoonshotClient reviewChange rejects with feedback", async () => {
+    const client = new MoonshotClient(
+        "key",
+        "model",
+        mockToolFetch("review", {
+            accepted: false,
+            feedback: "wrong indentation",
+        }),
+    );
+    const result = await client.reviewChange(
+        "original",
+        "proposed",
+        "test change",
+    );
+    assertEquals(result.accepted, false);
+    assertEquals(result.feedback, "wrong indentation");
+});
+
+Deno.test("MoonshotClient callWithTool throws on API error", async () => {
+    const fetchFn = (() =>
+        Promise.resolve(
+            new Response(JSON.stringify({ error: "bad" }), { status: 429 }),
+        )) as unknown as typeof fetch;
+    const client = new MoonshotClient("key", "model", fetchFn);
+    await assertRejects(
+        () => client.verifyFunctionMatch("code", "func", "file"),
+        Error,
+        "LLM API error 429",
+    );
+});
+
+Deno.test("MoonshotClient callWithTool throws on missing tool call", async () => {
+    const fetchFn = (() =>
+        Promise.resolve(
+            new Response(
+                JSON.stringify({
+                    choices: [{ message: { content: "no tool", tool_calls: [] } }],
+                }),
+            ),
+        )) as unknown as typeof fetch;
+    const client = new MoonshotClient("key", "model", fetchFn);
+    await assertRejects(
+        () => client.verifyFunctionMatch("code", "func", "file"),
+        Error,
+        "Unexpected LLM response",
+    );
+});
+
+Deno.test("MoonshotClient callWithTool logs API error with stats", async () => {
+    const stats = new LLMStats();
+    const messages: string[] = [];
+    const fetchFn = (() =>
+        Promise.resolve(
+            new Response(JSON.stringify({ error: "bad" }), { status: 429 }),
+        )) as unknown as typeof fetch;
+    const client = new MoonshotClient(
+        "key",
+        "model",
+        fetchFn,
+        stats,
+        (...args: unknown[]) => messages.push(args.join(" ")),
+    );
+    await assertRejects(
+        () => client.verifyFunctionMatch("code", "func", "file"),
+        Error,
+        "LLM API error 429",
+    );
+    assert(messages.some((m) => m.includes("API error 429")));
+});
+
+Deno.test("MoonshotClient callWithTool logs missing tool call with stats", async () => {
+    const stats = new LLMStats();
+    const messages: string[] = [];
+    const fetchFn = (() =>
+        Promise.resolve(
+            new Response(
+                JSON.stringify({
+                    choices: [{ message: { content: "no tool", tool_calls: [] } }],
+                }),
+            ),
+        )) as unknown as typeof fetch;
+    const client = new MoonshotClient(
+        "key",
+        "model",
+        fetchFn,
+        stats,
+        (...args: unknown[]) => messages.push(args.join(" ")),
+    );
+    await assertRejects(
+        () => client.verifyFunctionMatch("code", "func", "file"),
+        Error,
+        "Unexpected LLM response",
+    );
+    assert(messages.some((m) => m.includes("no tool response")));
+});
+
+Deno.test("MoonshotClient callWithTool with stats logs and records", async () => {
+    const stats = new LLMStats();
+    const messages: string[] = [];
+    const orig = console.error;
+    console.error = (...args: unknown[]) => messages.push(args.join(" "));
+    try {
+        const client = new MoonshotClient(
+            "key",
+            "model",
+            mockToolFetch("evaluate_match", { is_match: true, reason: "" }, 50, 20),
+            stats,
+            (...args: unknown[]) => messages.push(args.join(" ")),
+        );
+        const result = await client.verifyFunctionMatch(
+            "code",
+            "func",
+            "file",
+        );
+        assertEquals(result.isMatch, true);
+        assertEquals(stats.callCount, 1);
+        assertEquals(stats.totalPromptTokens, 50);
+        assertEquals(stats.totalCompletionTokens, 20);
+        assert(messages.some((m) => m.includes("verify function match")));
+    } finally {
+        console.error = orig;
+    }
+});
+
+Deno.test("MoonshotClient callWithTool handles missing usage in response", async () => {
+    const stats = new LLMStats();
+    const messages: string[] = [];
+    const fetchFn = (() =>
+        Promise.resolve(
+            new Response(
+                JSON.stringify({
+                    choices: [{
+                        message: {
+                            content: null,
+                            tool_calls: [{
+                                function: {
+                                    name: "evaluate_match",
+                                    arguments: JSON.stringify({
+                                        is_match: true,
+                                        reason: "",
+                                    }),
+                                },
+                            }],
+                        },
+                    }],
+                }),
+            ),
+        )) as unknown as typeof fetch;
+    const client = new MoonshotClient(
+        "key",
+        "model",
+        fetchFn,
+        stats,
+        (...args: unknown[]) => messages.push(args.join(" ")),
+    );
+    const result = await client.verifyFunctionMatch("code", "func", "file");
+    assertEquals(result.isMatch, true);
+    assertEquals(stats.callCount, 1);
+    assertEquals(stats.totalPromptTokens, 0);
+    assertEquals(stats.totalCompletionTokens, 0);
+});
+
+Deno.test("MoonshotClient verifyFunctionMatch truncates long file source", async () => {
+    const stats = new LLMStats();
+    const fetchFn = mockToolFetch("evaluate_match", {
+        is_match: false,
+        reason: "",
+    });
+    const client = new MoonshotClient("key", "model", fetchFn, stats);
+    const longSource = "x".repeat(5000);
+    const result = await client.verifyFunctionMatch("code", "func", longSource);
+    assertEquals(result.isMatch, false);
+});
+
+Deno.test("MoonshotClient generateCallReplacement truncates long file source", async () => {
+    const stats = new LLMStats();
+    const fetchFn = mockToolFetch("generate_call", { replacement: "foo()" });
+    const client = new MoonshotClient("key", "model", fetchFn, stats);
+    const longSource = "x".repeat(5000);
+    const result = await client.generateCallReplacement(
+        "code",
+        "foo",
+        "func",
+        longSource,
+    );
+    assertEquals(result, "foo()");
+});
+
+Deno.test("MoonshotClient callWithTool retries on malformed JSON and succeeds", async () => {
+    const messages: string[] = [];
+    let callCount = 0;
+    const fetchFn = (() => {
+        callCount++;
+        if (callCount === 1) {
+            return Promise.resolve(
+                new Response(
+                    JSON.stringify({
+                        choices: [{
+                            finish_reason: "length",
+                            message: {
+                                content: null,
+                                tool_calls: [{
+                                    function: {
+                                        name: "evaluate_match",
+                                        arguments:
+                                            '{"is_match": true, "reason": "un',
+                                    },
+                                }],
+                            },
+                        }],
+                    }),
+                ),
+            );
+        }
+        return Promise.resolve(
+            new Response(
+                JSON.stringify({
+                    choices: [{
+                        finish_reason: "stop",
+                        message: {
+                            content: null,
+                            tool_calls: [{
+                                function: {
+                                    name: "evaluate_match",
+                                    arguments: JSON.stringify({
+                                        is_match: true,
+                                        reason: "ok",
+                                    }),
+                                },
+                            }],
+                        },
+                    }],
+                }),
+            ),
+        );
+    }) as unknown as typeof fetch;
+    const client = new MoonshotClient(
+        "key",
+        "model",
+        fetchFn,
+        undefined,
+        (...args: unknown[]) => messages.push(args.join(" ")),
+    );
+    const result = await client.verifyFunctionMatch("code", "func", "file");
+    assertEquals(result.isMatch, true);
+    assertEquals(result.reason, "ok");
+    assertEquals(callCount, 2);
+    assert(messages.some((m) => m.includes("JSON parse failed on attempt 1")));
+    assert(messages.some((m) => m.includes("finish_reason=length")));
+    assert(messages.some((m) => m.includes("retrying")));
+});
+
+Deno.test("MoonshotClient callWithTool retries exhausted throws with diagnostics", async () => {
+    const messages: string[] = [];
+    const fetchFn = (() =>
+        Promise.resolve(
+            new Response(
+                JSON.stringify({
+                    choices: [{
+                        finish_reason: "length",
+                        message: {
+                            content: null,
+                            tool_calls: [{
+                                function: {
+                                    name: "evaluate_match",
+                                    arguments: '{"broken',
+                                },
+                            }],
+                        },
+                    }],
+                }),
+            ),
+        )) as unknown as typeof fetch;
+    const client = new MoonshotClient(
+        "key",
+        "model",
+        fetchFn,
+        undefined,
+        (...args: unknown[]) => messages.push(args.join(" ")),
+    );
+    await assertRejects(
+        () => client.verifyFunctionMatch("code", "func", "file"),
+        Error,
+        "Failed to parse LLM tool arguments after 3 attempts",
+    );
+    assert(messages.some((m) => m.includes("JSON parse failed after 3 attempts")));
+    assert(messages.some((m) => m.includes("finish_reason=length")));
+    assert(messages.some((m) => m.includes("raw arguments")));
+});
+
+Deno.test("MoonshotClient callWithTool retry with stats records all attempts", async () => {
+    const stats = new LLMStats();
+    const messages: string[] = [];
+    let callCount = 0;
+    const fetchFn = (() => {
+        callCount++;
+        if (callCount === 1) {
+            return Promise.resolve(
+                new Response(
+                    JSON.stringify({
+                        choices: [{
+                            message: {
+                                content: null,
+                                tool_calls: [{
+                                    function: {
+                                        name: "evaluate_match",
+                                        arguments: '{"broken',
+                                    },
+                                }],
+                            },
+                        }],
+                        usage: {
+                            prompt_tokens: 10,
+                            completion_tokens: 5,
+                            total_tokens: 15,
+                        },
+                    }),
+                ),
+            );
+        }
+        return Promise.resolve(
+            new Response(
+                JSON.stringify({
+                    choices: [{
+                        finish_reason: "stop",
+                        message: {
+                            content: null,
+                            tool_calls: [{
+                                function: {
+                                    name: "evaluate_match",
+                                    arguments: JSON.stringify({
+                                        is_match: false,
+                                        reason: "",
+                                    }),
+                                },
+                            }],
+                        },
+                    }],
+                    usage: {
+                        prompt_tokens: 8,
+                        completion_tokens: 3,
+                        total_tokens: 11,
+                    },
+                }),
+            ),
+        );
+    }) as unknown as typeof fetch;
+    const client = new MoonshotClient(
+        "key",
+        "model",
+        fetchFn,
+        stats,
+        (...args: unknown[]) => messages.push(args.join(" ")),
+    );
+    const result = await client.verifyFunctionMatch("code", "func", "file");
+    assertEquals(result.isMatch, false);
+    assertEquals(stats.callCount, 1);
+    assertEquals(stats.totalPromptTokens, 8);
+    assertEquals(stats.totalCompletionTokens, 3);
+    assert(messages.some((m) => m.includes("JSON parse failed")));
+    assert(messages.some((m) => m.includes("finish_reason=unknown")));
 });

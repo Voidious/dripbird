@@ -1,0 +1,2 @@
+enabled_refactors:
+    - if_not_else

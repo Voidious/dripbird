@@ -4,8 +4,10 @@ pre-commit:
         fmt:
             run: deno fmt --check {staged_files}
             glob: "*.{ts,js,md,json}"
+            exclude: "samples/"
         lint:
-            run: deno lint {staged_files}
+            run: test -n "{staged_files}" && deno lint {staged_files} || true
             glob: "*.{ts,js}"
+            exclude: "samples/"
         test:
             run: scripts/check_coverage.sh

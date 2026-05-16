@@ -1,0 +1,3 @@
+max_function_lines: 20
+enabled_refactors:
+    - function_splitter
