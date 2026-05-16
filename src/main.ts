@@ -6,6 +6,7 @@ import { createLLMClient, LLMStats } from "./llm.ts";
 import { ifNotElse } from "./refactors/if_not_else.ts";
 import { createFunctionSplitter } from "./refactors/function_splitter.ts";
 import { createFunctionMatcher } from "./refactors/function_matcher.ts";
+import { createDuplicateExtractor } from "./refactors/duplicate_extractor.ts";
 import { TypeCheckerImpl } from "./type_checker.ts";
 import type { LLMOptions } from "./llm.ts";
 
@@ -87,6 +88,18 @@ function printConfig(config: Config): void {
         ["max_function_lines", String(config.max_function_lines)],
         ["function_splitter_retries", String(config.function_splitter_retries)],
         ["function_matcher_retries", String(config.function_matcher_retries)],
+        [
+            "duplicate_extractor_min_lines",
+            String(config.duplicate_extractor_min_lines),
+        ],
+        [
+            "duplicate_extractor_max_lines",
+            String(config.duplicate_extractor_max_lines),
+        ],
+        [
+            "duplicate_extractor_retries",
+            String(config.duplicate_extractor_retries),
+        ],
         ["verbose", String(config.verbose)],
     ];
     const maxKeyLen = Math.max(...entries.map(([k]) => k.length));
@@ -150,6 +163,10 @@ export async function runInDir(
         namedRefactors.push({
             name: "function_matcher",
             refactor: createFunctionMatcher(config, llm),
+        });
+        namedRefactors.push({
+            name: "duplicate_extractor",
+            refactor: createDuplicateExtractor(config, llm),
         });
     }
 

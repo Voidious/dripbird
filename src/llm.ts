@@ -10,6 +10,18 @@ export interface ReviewResult {
     feedback: string;
 }
 
+export interface DuplicateVerifyResult {
+    isMatch: boolean;
+    excludeIndices: number[];
+    reason: string;
+}
+
+export interface ExtractionResult {
+    helperName: string;
+    helperFunction: string;
+    callSites: string[];
+}
+
 export interface LLMClient {
     nameFunction(
         context: string,
@@ -36,6 +48,18 @@ export interface LLMClient {
         proposedSource: string,
         description: string,
     ): Promise<ReviewResult>;
+
+    verifyDuplicateMatch(
+        codeBlocks: string[],
+        fileSource: string,
+    ): Promise<DuplicateVerifyResult>;
+
+    generateExtraction(
+        codeBlocks: string[],
+        fileSource: string,
+        forbiddenNames: string[],
+        previousFeedback?: string,
+    ): Promise<ExtractionResult>;
 }
 
 export interface LLMOptions {
@@ -544,6 +568,157 @@ export class MoonshotClient implements LLMClient {
             feedback: string;
         }>(messages, tool, "review change");
         return { accepted: result.accepted, feedback: result.feedback };
+    }
+
+    async verifyDuplicateMatch(
+        codeBlocks: string[],
+        fileSource: string,
+    ): Promise<DuplicateVerifyResult> {
+        const snippet = fileSource.length > 4000
+            ? fileSource.slice(0, 4000)
+            : fileSource;
+        const blocksText = codeBlocks
+            .map((block, i) =>
+                `Block ${i + 1}:\n\`\`\`typescript\n${block.trim()}\n\`\`\``
+            )
+            .join("\n\n");
+        const messages: ChatMessage[] = [
+            {
+                role: "user",
+                content:
+                    `Several code blocks in a TypeScript/JavaScript file may perform the same operation.\n\n` +
+                    `${blocksText}\n\n` +
+                    `File source (for context):\n\`\`\`typescript\n${snippet}\n\`\`\`\n\n` +
+                    `Do these code blocks perform the same semantic operation, such that they could all be replaced by calls to a single helper function? ` +
+                    `If most match but some don't, exclude the non-matching ones. Use the evaluate_duplicates tool.`,
+            },
+        ];
+        const tool: ToolDefinition = {
+            type: "function",
+            function: {
+                name: "evaluate_duplicates",
+                description:
+                    "Evaluate whether code blocks are semantically equivalent and identify any to exclude",
+                parameters: {
+                    type: "object",
+                    properties: {
+                        is_match: {
+                            type: "boolean",
+                            description:
+                                "True if the code blocks perform the same semantic operation",
+                        },
+                        exclude_indices: {
+                            type: "array",
+                            items: { type: "integer" },
+                            description:
+                                "0-based indices of blocks to exclude from extraction",
+                        },
+                        reason: {
+                            type: "string",
+                            description: "Explanation of the evaluation",
+                        },
+                    },
+                    required: [
+                        "is_match",
+                        "exclude_indices",
+                        "reason",
+                    ],
+                },
+            },
+        };
+        const result = await this.callWithTool<{
+            is_match: boolean;
+            exclude_indices: number[];
+            reason: string;
+        }>(messages, tool, "verify duplicate match");
+        return {
+            isMatch: result.is_match,
+            excludeIndices: result.exclude_indices ?? [],
+            reason: result.reason,
+        };
+    }
+
+    async generateExtraction(
+        codeBlocks: string[],
+        fileSource: string,
+        forbiddenNames: string[],
+        previousFeedback?: string,
+    ): Promise<ExtractionResult> {
+        const snippet = fileSource.length > 4000
+            ? fileSource.slice(0, 4000)
+            : fileSource;
+        const feedbackSection = previousFeedback
+            ? `\n\nIMPORTANT: A previous attempt was rejected with this feedback. Fix the issue:\n${previousFeedback}`
+            : "";
+        const blocksText = codeBlocks
+            .map((block, i) =>
+                `Block ${i + 1}:\n\`\`\`typescript\n${block.trim()}\n\`\`\``
+            )
+            .join("\n\n");
+        const forbiddenSection = forbiddenNames.length
+            ? `\n\nForbidden names (do NOT use these): ${forbiddenNames.join(", ")}`
+            : "";
+        const messages: ChatMessage[] = [
+            {
+                role: "user",
+                content:
+                    `Extract a common helper function from these duplicate code blocks.\n\n` +
+                    `${blocksText}\n\n` +
+                    `File source (for context):\n\`\`\`typescript\n${snippet}\n\`\`\`\n\n` +
+                    `Requirements:\n` +
+                    `- Generate a top-level function declaration (not arrow function)\n` +
+                    `- Choose a descriptive camelCase name\n` +
+                    `- Pass all necessary values as parameters\n` +
+                    `- If a code block ends with a return, the call site must also return\n` +
+                    `- Preserve the original indentation of each call site\n` +
+                    `- Output exactly ${codeBlocks.length} call sites, one per block${forbiddenSection}${feedbackSection}\n\n` +
+                    `Use the generate_extraction tool.`,
+            },
+        ];
+        const tool: ToolDefinition = {
+            type: "function",
+            function: {
+                name: "generate_extraction",
+                description:
+                    "Generate a helper function and call sites for duplicate code blocks",
+                parameters: {
+                    type: "object",
+                    properties: {
+                        helper_name: {
+                            type: "string",
+                            description:
+                                "camelCase name for the new helper function",
+                        },
+                        helper_function: {
+                            type: "string",
+                            description:
+                                "Complete source of the helper function declaration",
+                        },
+                        call_sites: {
+                            type: "array",
+                            items: { type: "string" },
+                            description:
+                                "Replacement code for each block, preserving indentation",
+                        },
+                    },
+                    required: [
+                        "helper_name",
+                        "helper_function",
+                        "call_sites",
+                    ],
+                },
+            },
+        };
+        const result = await this.callWithTool<{
+            helper_name: string;
+            helper_function: string;
+            call_sites: string[];
+        }>(messages, tool, "generate extraction");
+        return {
+            helperName: result.helper_name,
+            helperFunction: result.helper_function,
+            callSites: result.call_sites,
+        };
     }
 }
 

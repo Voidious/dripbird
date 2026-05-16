@@ -5,6 +5,9 @@ export interface Config {
     max_function_lines: number;
     function_splitter_retries: number;
     function_matcher_retries: number;
+    duplicate_extractor_min_lines: number;
+    duplicate_extractor_max_lines: number;
+    duplicate_extractor_retries: number;
     provider: string;
     model: string;
     enabled_refactors: string[];
@@ -33,6 +36,9 @@ const DEFAULTS: Config = {
     max_function_lines: 75,
     function_splitter_retries: 2,
     function_matcher_retries: 2,
+    duplicate_extractor_min_lines: 2,
+    duplicate_extractor_max_lines: 12,
+    duplicate_extractor_retries: 2,
     provider: "moonshot",
     model: "kimi-k2.5",
     enabled_refactors: [],
@@ -74,6 +80,18 @@ function mergeConfig(
         }
         if (typeof override.function_matcher_retries === "number") {
             result.function_matcher_retries = override.function_matcher_retries;
+        }
+        if (typeof override.duplicate_extractor_min_lines === "number") {
+            result.duplicate_extractor_min_lines =
+                override.duplicate_extractor_min_lines;
+        }
+        if (typeof override.duplicate_extractor_max_lines === "number") {
+            result.duplicate_extractor_max_lines =
+                override.duplicate_extractor_max_lines;
+        }
+        if (typeof override.duplicate_extractor_retries === "number") {
+            result.duplicate_extractor_retries =
+                override.duplicate_extractor_retries;
         }
         if (typeof override.provider === "string") {
             result.provider = override.provider;

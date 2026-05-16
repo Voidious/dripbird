@@ -34,6 +34,14 @@ function mockLLM(name: string): LLMClient {
         async reviewChange() {
             return { accepted: true, feedback: "" };
         },
+        // deno-lint-ignore require-await
+        async verifyDuplicateMatch() {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateExtraction() {
+            return { helperName: "", helperFunction: "", callSites: [] };
+        },
     };
 }
 
@@ -55,6 +63,9 @@ const defaultConfig = {
     max_function_lines: 10,
     function_splitter_retries: 2,
     function_matcher_retries: 2,
+    duplicate_extractor_min_lines: 2,
+    duplicate_extractor_max_lines: 12,
+    duplicate_extractor_retries: 2,
     provider: "moonshot",
     model: "kimi-k2.5",
     enabled_refactors: [],
@@ -226,6 +237,14 @@ Deno.test("function splitter passes free variables as params", async () => {
         async reviewChange() {
             return { accepted: true, feedback: "" };
         },
+        // deno-lint-ignore require-await
+        async verifyDuplicateMatch() {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateExtraction() {
+            return { helperName: "", helperFunction: "", callSites: [] };
+        },
     };
     const splitter = createFunctionSplitter(
         defaultConfig,
@@ -266,6 +285,14 @@ Deno.test("function splitter retries on LLM failure", async () => {
         async reviewChange() {
             return { accepted: true, feedback: "" };
         },
+        // deno-lint-ignore require-await
+        async verifyDuplicateMatch() {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateExtraction() {
+            return { helperName: "", helperFunction: "", callSites: [] };
+        },
     };
     const splitter = createFunctionSplitter(
         defaultConfig,
@@ -304,6 +331,14 @@ Deno.test("function splitter gives up after retries exhausted", async () => {
         // deno-lint-ignore require-await
         async reviewChange() {
             return { accepted: true, feedback: "" };
+        },
+        // deno-lint-ignore require-await
+        async verifyDuplicateMatch() {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateExtraction() {
+            return { helperName: "", helperFunction: "", callSites: [] };
         },
     };
     const splitter = createFunctionSplitter(
@@ -686,6 +721,14 @@ Deno.test("function splitter selects split point with fewest params", async () =
         // deno-lint-ignore require-await
         async reviewChange() {
             return { accepted: true, feedback: "" };
+        },
+        // deno-lint-ignore require-await
+        async verifyDuplicateMatch() {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateExtraction() {
+            return { helperName: "", helperFunction: "", callSites: [] };
         },
     };
     const splitter = createFunctionSplitter(
@@ -1095,6 +1138,14 @@ Deno.test("function splitter with multiple candidates processes all", async () =
         async reviewChange() {
             return { accepted: true, feedback: "" };
         },
+        // deno-lint-ignore require-await
+        async verifyDuplicateMatch() {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateExtraction() {
+            return { helperName: "", helperFunction: "", callSites: [] };
+        },
     };
     const splitter = createFunctionSplitter(
         defaultConfig,
@@ -1232,6 +1283,14 @@ Deno.test("function splitter rejects forbidden name and retries", async () => {
         async reviewChange() {
             return { accepted: true, feedback: "" };
         },
+        // deno-lint-ignore require-await
+        async verifyDuplicateMatch() {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateExtraction() {
+            return { helperName: "", helperFunction: "", callSites: [] };
+        },
     };
     const splitter = createFunctionSplitter(
         defaultConfig,
@@ -1274,6 +1333,14 @@ Deno.test("function splitter rejects keyword name and retries", async () => {
         async reviewChange() {
             return { accepted: true, feedback: "" };
         },
+        // deno-lint-ignore require-await
+        async verifyDuplicateMatch() {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateExtraction() {
+            return { helperName: "", helperFunction: "", callSites: [] };
+        },
     };
     const splitter = createFunctionSplitter(
         defaultConfig,
@@ -1314,6 +1381,14 @@ Deno.test("function splitter rejects function-scoped variable name", async () =>
         async reviewChange() {
             return { accepted: true, feedback: "" };
         },
+        // deno-lint-ignore require-await
+        async verifyDuplicateMatch() {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateExtraction() {
+            return { helperName: "", helperFunction: "", callSites: [] };
+        },
     };
     const splitter = createFunctionSplitter(
         defaultConfig,
@@ -1353,6 +1428,14 @@ Deno.test("function splitter gives up when all attempts return forbidden names",
         async reviewChange() {
             return { accepted: true, feedback: "" };
         },
+        // deno-lint-ignore require-await
+        async verifyDuplicateMatch() {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateExtraction() {
+            return { helperName: "", helperFunction: "", callSites: [] };
+        },
     };
     const splitter = createFunctionSplitter(
         defaultConfig,
@@ -1385,6 +1468,14 @@ Deno.test("function splitter passes forbidden names to LLM", async () => {
         // deno-lint-ignore require-await
         async reviewChange() {
             return { accepted: true, feedback: "" };
+        },
+        // deno-lint-ignore require-await
+        async verifyDuplicateMatch() {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateExtraction() {
+            return { helperName: "", helperFunction: "", callSites: [] };
         },
     };
     const splitter = createFunctionSplitter(
@@ -1469,6 +1560,14 @@ Deno.test("function splitter with low coverage restricts split to diff", async (
         // deno-lint-ignore require-await
         async reviewChange() {
             return { accepted: true, feedback: "" };
+        },
+        // deno-lint-ignore require-await
+        async verifyDuplicateMatch() {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateExtraction() {
+            return { helperName: "", helperFunction: "", callSites: [] };
         },
     };
     const splitter = createFunctionSplitter(
@@ -1570,6 +1669,14 @@ Deno.test("function splitter recursively splits helper when over limit", async (
         async reviewChange() {
             return { accepted: true, feedback: "" };
         },
+        // deno-lint-ignore require-await
+        async verifyDuplicateMatch() {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateExtraction() {
+            return { helperName: "", helperFunction: "", callSites: [] };
+        },
     };
     const splitter = createFunctionSplitter(
         { ...defaultConfig, max_function_lines: 15 },
@@ -1610,6 +1717,14 @@ Deno.test("function splitter prefers split point that avoids re-split", async ()
         async reviewChange() {
             return { accepted: true, feedback: "" };
         },
+        // deno-lint-ignore require-await
+        async verifyDuplicateMatch() {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateExtraction() {
+            return { helperName: "", helperFunction: "", callSites: [] };
+        },
     };
     const splitter = createFunctionSplitter(
         { ...defaultConfig, max_function_lines: 10 },
@@ -1648,6 +1763,14 @@ Deno.test("function splitter respects depth limit for very long functions", asyn
         // deno-lint-ignore require-await
         async reviewChange() {
             return { accepted: true, feedback: "" };
+        },
+        // deno-lint-ignore require-await
+        async verifyDuplicateMatch() {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateExtraction() {
+            return { helperName: "", helperFunction: "", callSites: [] };
         },
     };
     const splitter = createFunctionSplitter(
@@ -1695,6 +1818,14 @@ Deno.test("function splitter does not re-split original when only modification i
         async reviewChange() {
             return { accepted: true, feedback: "" };
         },
+        // deno-lint-ignore require-await
+        async verifyDuplicateMatch() {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateExtraction() {
+            return { helperName: "", helperFunction: "", callSites: [] };
+        },
     };
     const splitter = createFunctionSplitter(
         defaultConfig,
@@ -1733,6 +1864,14 @@ Deno.test("function splitter re-splits original with high coverage when still ov
         // deno-lint-ignore require-await
         async reviewChange() {
             return { accepted: true, feedback: "" };
+        },
+        // deno-lint-ignore require-await
+        async verifyDuplicateMatch() {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateExtraction() {
+            return { helperName: "", helperFunction: "", callSites: [] };
         },
     };
     const splitter = createFunctionSplitter(
@@ -1775,6 +1914,14 @@ ${lines.join("\n")}
         // deno-lint-ignore require-await
         async reviewChange() {
             return { accepted: true, feedback: "" };
+        },
+        // deno-lint-ignore require-await
+        async verifyDuplicateMatch() {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateExtraction() {
+            return { helperName: "", helperFunction: "", callSites: [] };
         },
     };
     const splitter = createFunctionSplitter(
@@ -1945,6 +2092,14 @@ Deno.test("function splitter preserves types through recursive splits", async ()
         // deno-lint-ignore require-await
         async reviewChange() {
             return { accepted: true, feedback: "" };
+        },
+        // deno-lint-ignore require-await
+        async verifyDuplicateMatch() {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateExtraction() {
+            return { helperName: "", helperFunction: "", callSites: [] };
         },
     };
     const splitter = createFunctionSplitter(
