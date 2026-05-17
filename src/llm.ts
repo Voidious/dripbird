@@ -652,7 +652,7 @@ export class MoonshotClient implements LLMClient {
             : "";
         const blocksText = codeBlocks
             .map((block, i) =>
-                `Block ${i + 1}:\n\`\`\`typescript\n${block.trim()}\n\`\`\``
+                `Block ${i + 1}:\n\`\`\`typescript\n${block.trimEnd()}\n\`\`\``
             )
             .join("\n\n");
         const forbiddenSection = forbiddenNames.length
@@ -670,7 +670,7 @@ export class MoonshotClient implements LLMClient {
                     `- Choose a descriptive camelCase name\n` +
                     `- Pass all necessary values as parameters\n` +
                     `- If a code block ends with a return, the call site must also return\n` +
-                    `- Preserve the original indentation of each call site\n` +
+                    `- Each call site must use the same indentation as its block above\n` +
                     `- Output exactly ${codeBlocks.length} call sites, one per block${forbiddenSection}${feedbackSection}\n\n` +
                     `Use the generate_extraction tool.`,
             },

@@ -743,6 +743,38 @@ Deno.test("duplicate extractor: matches identical blocks in static methods", asy
     assert(result.source.includes("logResult"));
 });
 
+Deno.test("duplicate extractor: normalizes call site indentation from LLM", async () => {
+    const source = [
+        "function foo() {",
+        "    const x = getValue();",
+        '    console.log("result:", x);',
+        "}",
+        "",
+        "function bar() {",
+        "    const y = getValue();",
+        '    console.log("result:", y);',
+        "}",
+    ].join("\n");
+
+    const llm = mockLLM({
+        extraction: {
+            helperName: "logResult",
+            helperFunction:
+                "function logResult(val) {\n    console.log('result:', val);\n}\n",
+            callSites: [
+                "const x = getValue();\nlogResult(x);\n",
+                "const y = getValue();\nlogResult(y);\n",
+            ],
+        },
+    });
+
+    const extractor = createDuplicateExtractor(testConfig, llm);
+    const result = await extractor(source, [{ start: 6, end: 8 }]);
+    assertEquals(result.changed, true);
+    assert(result.source.includes("    const x = getValue();"));
+    assert(result.source.includes("    logResult(x);"));
+});
+
 Deno.test("duplicate extractor: no match for single-line blocks when min_lines is 2", async () => {
     const source = [
         "function foo() {",

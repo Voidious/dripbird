@@ -277,6 +277,39 @@ export function findDuplicateGroups(
     return groups;
 }
 
+function detectBaseIndent(text: string): string {
+    let minLen = Infinity;
+    let result = "";
+    for (const line of text.split("\n")) {
+        if (line.trim().length === 0) continue;
+        const leading = line.substring(
+            0,
+            line.search(/\S|$/),
+        );
+        if (leading.length < minLen) {
+            minLen = leading.length;
+            result = leading;
+        }
+    }
+    return result;
+}
+
+function normalizeCallSiteIndent(
+    callSite: string,
+    targetIndent: string,
+): string {
+    const currentIndent = detectBaseIndent(callSite);
+    if (currentIndent === targetIndent) return callSite;
+    return callSite.split("\n").map((line) => {
+        if (line.trim().length === 0) return line;
+        const stripped = currentIndent.length > 0 &&
+                line.startsWith(currentIndent)
+            ? line.slice(currentIndent.length)
+            : line.trimStart();
+        return targetIndent + stripped;
+    }).join("\n");
+}
+
 function applyTextEdit(
     source: string,
     startLine: number,
@@ -409,12 +442,17 @@ export function createDuplicateExtractor(
                     continue;
                 }
 
+                const callSites = extraction.callSites.map((cs, i) => {
+                    const targetIndent = detectBaseIndent(remainingBlocks[i]);
+                    return normalizeCallSiteIndent(cs, targetIndent);
+                });
+
                 let proposedSource = currentSource;
 
                 const sortedIndices = remaining
                     .map((seq, i) => ({
                         seq,
-                        callSite: extraction.callSites[i],
+                        callSite: callSites[i],
                         index: i,
                     }))
                     .sort((a, b) => b.seq.startLine - a.seq.startLine);
