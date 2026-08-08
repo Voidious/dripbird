@@ -14,6 +14,9 @@ export interface SeqInfo {
     source: string;
     fingerprint: string;
     scope: string;
+    kind: "function" | "method";
+    isStatic?: boolean;
+    className?: string | null;
 }
 
 function parseSource(source: string): any {
@@ -98,6 +101,20 @@ function normalizeStatements(stmts: any[]): string {
     return cloned.map((s: any) => print(s).code).join("\n");
 }
 
+function usesThis(stmts: any[]): boolean {
+    let found = false;
+    for (const stmt of stmts) {
+        visit(stmt, {
+            visitThisExpression() {
+                found = true;
+                return false;
+            },
+        });
+        if (found) return true;
+    }
+    return found;
+}
+
 export function collectSequences(
     ast: any,
     sourceLines: string[],
@@ -106,7 +123,11 @@ export function collectSequences(
 ): SeqInfo[] {
     const sequences: SeqInfo[] = [];
 
-    function processBody(bodyStmts: any[], scope: string) {
+    function processBody(
+        bodyStmts: any[],
+        scope: string,
+        ctx: Pick<SeqInfo, "kind" | "isStatic" | "className">,
+    ) {
         const valid: Array<{
             stmt: any;
             startLine: number;
@@ -145,6 +166,7 @@ export function collectSequences(
                     source,
                     fingerprint,
                     scope,
+                    ...ctx,
                 });
             }
         }
@@ -165,16 +187,16 @@ export function collectSequences(
                 this.traverse(path);
                 return;
             }
-            processBody(node.body.body, node.id.name as string);
+            processBody(
+                node.body.body,
+                node.id.name as string,
+                { kind: "function", isStatic: false, className: null },
+            );
             this.traverse(path);
         },
         visitClassMethod(path) {
             const node = path.node;
             if (node.kind === "constructor") {
-                this.traverse(path);
-                return;
-            }
-            if (!node.static) {
                 this.traverse(path);
                 return;
             }
@@ -198,7 +220,15 @@ export function collectSequences(
                 this.traverse(path);
                 return;
             }
-            processBody(node.body.body, `${className}.${methodName}`);
+            processBody(
+                node.body.body,
+                `${className}.${methodName}`,
+                {
+                    kind: "method",
+                    isStatic: !!node.static,
+                    className: className as string,
+                },
+            );
             this.traverse(path);
         },
         visitFunctionExpression() {
@@ -325,6 +355,97 @@ function applyTextEdit(
     return [...before, ...replacementLines, ...after].join("\n");
 }
 
+export type ExtractionTarget =
+    | { kind: "function" }
+    | { kind: "instanceMethod"; className: string };
+
+/**
+ * Decide where a duplicate group's helper should live.
+ *
+ * - If no block uses `this`, a top-level function is always safe (the existing
+ *   behavior, valid from free functions, static methods, and instance methods
+ *   alike).
+ * - If any block uses `this`, the helper must be an instance method so `this`
+ *   still resolves — and that only works when every block is an instance
+ *   method of the same class. Otherwise the group cannot be reconciled and is
+ *   skipped (returns null).
+ */
+export function computeExtractionTarget(
+    seqs: SeqInfo[],
+): ExtractionTarget | null {
+    const groupUsesThis = seqs.some((s) => usesThis(s.statements));
+    if (!groupUsesThis) return { kind: "function" };
+
+    const first = seqs[0];
+    const allInstanceSameClass = seqs.every(
+        (s) =>
+            s.kind === "method" &&
+            !s.isStatic &&
+            !!s.className &&
+            s.className === first.className,
+    );
+    if (allInstanceSameClass && first.className) {
+        return { kind: "instanceMethod", className: first.className };
+    }
+    return null;
+}
+
+/**
+ * Re-indent a block of code so its minimum-indent line sits at `targetIndent`,
+ * preserving relative indentation. When the block already shares a common
+ * leading indent it is stripped first; lines below that indent are trimmed.
+ */
+export function reindentBlock(text: string, targetIndent: string): string {
+    const base = detectBaseIndent(text);
+    return text.split("\n").map((line) => {
+        if (line.trim().length === 0) return "";
+        if (line.startsWith(base)) {
+            return targetIndent + line.slice(base.length);
+        }
+        return targetIndent + line.trimStart();
+    }).join("\n");
+}
+
+/**
+ * Insert a method (given as source text, e.g. `helperName(p) { ... }`) as the
+ * last member of the named class, at one indent level. Returns the new source,
+ * or null if the class cannot be located (the caller's parse check will then
+ * reject the attempt).
+ */
+export function insertMethodIntoClass(
+    source: string,
+    className: string,
+    methodText: string,
+): string | null {
+    let ast: any;
+    try {
+        ast = parseSource(source);
+    } catch {
+        return null;
+    }
+
+    let endLine: number | null = null;
+    visit(ast, {
+        visitClassDeclaration(path) {
+            if (
+                path.node.id?.name === className &&
+                path.node.body?.loc?.end
+            ) {
+                endLine = path.node.body.loc.end.line;
+                return false;
+            }
+            this.traverse(path);
+        },
+    });
+    if (endLine === null) return null;
+
+    const indented = reindentBlock(methodText.trimEnd(), "    ");
+    const lines = source.split("\n");
+    const before = lines.slice(0, endLine - 1);
+    const after = lines.slice(endLine - 1);
+    return [...before, indented, ...after].join("\n");
+}
+
 export function createDuplicateExtractor(
     config: Config,
     llm: LLMClient,
@@ -410,6 +531,14 @@ export function createDuplicateExtractor(
                 }
             }
 
+            const target = computeExtractionTarget(remaining);
+            if (target === null) {
+                log?.(
+                    `dripbird: duplicate_extractor: group uses \`this\` but blocks are not all instance methods of one class; skipping`,
+                );
+                continue;
+            }
+
             const remainingBlocks = remaining.map((seq) => seq.source);
 
             const fileBindings = collectFileLevelBindings(
@@ -429,6 +558,9 @@ export function createDuplicateExtractor(
                     currentSource,
                     forbiddenNames,
                     lastFeedback || undefined,
+                    target.kind === "instanceMethod"
+                        ? { kind: "instanceMethod", className: target.className }
+                        : undefined,
                 );
 
                 if (
@@ -466,8 +598,27 @@ export function createDuplicateExtractor(
                     );
                 }
 
-                proposedSource = proposedSource.trimEnd() + "\n\n" +
-                    extraction.helperFunction + "\n";
+                if (target.kind === "instanceMethod") {
+                    const inserted = insertMethodIntoClass(
+                        proposedSource,
+                        target.className,
+                        extraction.helperFunction,
+                    );
+                    if (inserted === null) {
+                        log?.(
+                            `dripbird: duplicate_extractor: could not place instance method into class ${target.className} (attempt ${
+                                attempt + 1
+                            }/${maxAttempts})`,
+                        );
+                        lastFeedback =
+                            `Could not insert the helper as an instance method into class ${target.className}. Ensure the helper is a single method (no leading "function" keyword) and uses \`this.\` call sites.`;
+                        continue;
+                    }
+                    proposedSource = inserted;
+                } else {
+                    proposedSource = proposedSource.trimEnd() + "\n\n" +
+                        extraction.helperFunction + "\n";
+                }
 
                 let parseOk = false;
                 try {

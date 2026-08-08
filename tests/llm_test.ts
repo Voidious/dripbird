@@ -1333,3 +1333,73 @@ Deno.test("MoonshotClient generateExtraction truncates long source", async () =>
     assertEquals(result.helperName, "h");
     assertEquals(stats.callCount, 1);
 });
+
+function captureRequestFetch(): {
+    fetchFn: typeof fetch;
+    getRequest: () => Request | null;
+} {
+    const captured: { req: Request | null } = { req: null };
+    const fetchFn = ((input: RequestInfo | URL, init?: RequestInit) => {
+        captured.req = new Request(input as URL, init);
+        return Promise.resolve(
+            new Response(
+                JSON.stringify({
+                    choices: [{
+                        message: {
+                            content: null,
+                            tool_calls: [{
+                                function: {
+                                    name: "generate_extraction",
+                                    arguments: JSON.stringify({
+                                        helper_name: "helper",
+                                        helper_function: "helper() {}\n",
+                                        call_sites: ["    this.helper();\n"],
+                                    }),
+                                },
+                            }],
+                        },
+                    }],
+                    usage: {
+                        prompt_tokens: 10,
+                        completion_tokens: 5,
+                        total_tokens: 15,
+                    },
+                }),
+            ),
+        );
+    }) as unknown as typeof fetch;
+    return { fetchFn, getRequest: () => captured.req };
+}
+
+Deno.test("MoonshotClient generateExtraction uses instance-method prompt with context", async () => {
+    const { fetchFn, getRequest } = captureRequestFetch();
+    const client = new MoonshotClient("key", "model", fetchFn);
+    await client.generateExtraction(
+        ["this.x = 1;"],
+        "source",
+        [],
+        undefined,
+        { kind: "instanceMethod", className: "Logger" },
+    );
+    const body = await getRequest()!.json();
+    const content = body.messages[0].content as string;
+    assert(content.includes("instance"), "prompt should mention instance method");
+    assert(content.includes("Logger"), "prompt should mention the class name");
+    assert(
+        content.includes("this.helperName"),
+        "prompt should require this. call sites",
+    );
+    assert(content.includes("method syntax"));
+    assert(!content.includes("top-level function declaration"));
+});
+
+Deno.test("MoonshotClient generateExtraction uses top-level prompt without context", async () => {
+    const { fetchFn, getRequest } = captureRequestFetch();
+    const client = new MoonshotClient("key", "model", fetchFn);
+    await client.generateExtraction(["x = 1;"], "source", []);
+    const body = await getRequest()!.json();
+    const content = body.messages[0].content as string;
+    assert(content.includes("top-level function declaration"));
+    assert(!content.includes("instance"));
+    assert(!content.includes("method syntax"));
+});

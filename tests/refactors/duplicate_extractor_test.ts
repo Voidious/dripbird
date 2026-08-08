@@ -3,8 +3,11 @@ import { parse as recastParse } from "recast";
 import * as babelParser from "@babel/parser";
 import {
     collectSequences,
+    computeExtractionTarget,
     createDuplicateExtractor,
     findDuplicateGroups,
+    insertMethodIntoClass,
+    reindentBlock,
 } from "../../src/refactors/duplicate_extractor.ts";
 import type { SeqInfo } from "../../src/refactors/duplicate_extractor.ts";
 import type {
@@ -948,7 +951,7 @@ Deno.test("duplicate extractor: passes feedback on retry", async () => {
     assertEquals(feedbacks[1], "missing param");
 });
 
-Deno.test("duplicate extractor: skips instance methods", async () => {
+Deno.test("duplicate extractor: instance methods without this extract to a top-level function", async () => {
     const source = [
         "class Foo {",
         "    process() {",
@@ -967,7 +970,279 @@ Deno.test("duplicate extractor: skips instance methods", async () => {
 
     const extractor = createDuplicateExtractor(testConfig, acceptAll);
     const result = await extractor(source, [{ start: 9, end: 11 }]);
+    assertEquals(result.changed, true);
+    // No `this` in the blocks -> helper is a top-level function, not a method.
+    assert(result.source.includes("function extractedHelper"));
+});
+
+Deno.test("duplicate extractor: extracts duplicate code into an instance method", async () => {
+    const source = [
+        "class Logger {",
+        "    prefix: string;",
+        "    logOrder(id: string) {",
+        "        const entry = `[${this.prefix}] ${id}`;",
+        "        console.log(entry);",
+        "    }",
+        "    logPayment(id: string) {",
+        "        const entry = `[${this.prefix}] ${id}`;",
+        "        console.log(entry);",
+        "    }",
+        "}",
+    ].join("\n");
+
+    const llm = mockLLM({
+        extraction: {
+            helperName: "formatEntry",
+            helperFunction:
+                "formatEntry(id: string): string {\n    return `[${this.prefix}] ${id}`;\n}\n",
+            callSites: [
+                "        const entry = this.formatEntry(id);\n        console.log(entry);\n",
+                "        const entry = this.formatEntry(id);\n        console.log(entry);\n",
+            ],
+        },
+    });
+
+    const extractor = createDuplicateExtractor(testConfig, llm);
+    const result = await extractor(source, [{ start: 6, end: 8 }]);
+    assertEquals(result.changed, true);
+    // Helper placed inside the class body as a method, not appended at file end.
+    const classEnd = result.source.lastIndexOf("}");
+    const helperIdx = result.source.indexOf("formatEntry(id: string): string");
+    assert(helperIdx > -1, "helper method should be present");
+    assert(helperIdx < classEnd, "helper should be inside the class body");
+    assert(
+        result.source.includes("this.formatEntry(id)"),
+        "call sites should use this.helper",
+    );
+    assert(
+        !/\nfunction formatEntry/.test(result.source),
+        "should not emit a top-level function declaration",
+    );
+});
+
+Deno.test("duplicate extractor: skips this-using blocks across different classes", async () => {
+    const source = [
+        "class Foo {",
+        "    prefix: string;",
+        "    run() {",
+        "        const x = `[${this.prefix}]`;",
+        "        console.log(x);",
+        "    }",
+        "}",
+        "",
+        "class Bar {",
+        "    prefix: string;",
+        "    run() {",
+        "        const y = `[${this.prefix}]`;",
+        "        console.log(y);",
+        "    }",
+        "}",
+    ].join("\n");
+
+    const extractor = createDuplicateExtractor(testConfig, acceptAll);
+    const result = await extractor(source, [{ start: 3, end: 5 }]);
     assertEquals(result.changed, false);
+});
+
+Deno.test("duplicate extractor: skips this-using block mixed with a free function", async () => {
+    const source = [
+        "class Foo {",
+        "    prefix: string;",
+        "    run() {",
+        "        const x = `[${this.prefix}]`;",
+        "        console.log(x);",
+        "    }",
+        "}",
+        "",
+        "function helper() {",
+        "        const x = `[default]`;",
+        "        console.log(x);",
+        "}",
+    ].join("\n");
+
+    const extractor = createDuplicateExtractor(testConfig, acceptAll);
+    const result = await extractor(source, [{ start: 3, end: 5 }]);
+    assertEquals(result.changed, false);
+});
+
+Deno.test("duplicate extractor: computeExtractionTarget picks function when no this", () => {
+    const stmts = babelParser.parse("const x = 1;\nconsole.log(x);", {
+        sourceType: "module",
+        plugins: ["typescript", "jsx"],
+    }).program.body;
+    const seqs: SeqInfo[] = [
+        {
+            statements: stmts,
+            startLine: 3,
+            endLine: 5,
+            source: "",
+            fingerprint: "a",
+            scope: "foo",
+            kind: "function",
+        },
+        {
+            statements: stmts,
+            startLine: 7,
+            endLine: 9,
+            source: "",
+            fingerprint: "a",
+            scope: "bar",
+            kind: "method",
+            isStatic: false,
+            className: "Foo",
+        },
+    ];
+    assertEquals(computeExtractionTarget(seqs), { kind: "function" });
+});
+
+Deno.test("duplicate extractor: computeExtractionTarget picks instance method for same-class this-using blocks", () => {
+    const stmts = babelParser.parse("const x = this.prefix;", {
+        sourceType: "module",
+        plugins: ["typescript", "jsx"],
+    }).program.body;
+    const seqs: SeqInfo[] = [
+        {
+            statements: stmts,
+            startLine: 3,
+            endLine: 5,
+            source: "",
+            fingerprint: "a",
+            scope: "Logger.logOrder",
+            kind: "method",
+            isStatic: false,
+            className: "Logger",
+        },
+        {
+            statements: stmts,
+            startLine: 7,
+            endLine: 9,
+            source: "",
+            fingerprint: "a",
+            scope: "Logger.logPayment",
+            kind: "method",
+            isStatic: false,
+            className: "Logger",
+        },
+    ];
+    assertEquals(
+        computeExtractionTarget(seqs),
+        { kind: "instanceMethod", className: "Logger" },
+    );
+});
+
+Deno.test("duplicate extractor: computeExtractionTarget returns null for this-using blocks across classes", () => {
+    const stmts = babelParser.parse("const x = this.prefix;", {
+        sourceType: "module",
+        plugins: ["typescript", "jsx"],
+    }).program.body;
+    const seqs: SeqInfo[] = [
+        {
+            statements: stmts,
+            startLine: 3,
+            endLine: 5,
+            source: "",
+            fingerprint: "a",
+            scope: "Foo.run",
+            kind: "method",
+            isStatic: false,
+            className: "Foo",
+        },
+        {
+            statements: stmts,
+            startLine: 7,
+            endLine: 9,
+            source: "",
+            fingerprint: "a",
+            scope: "Bar.run",
+            kind: "method",
+            isStatic: false,
+            className: "Bar",
+        },
+    ];
+    assertEquals(computeExtractionTarget(seqs), null);
+});
+
+Deno.test("duplicate extractor: insertMethodIntoClass places method inside the class", () => {
+    const source = [
+        "class Foo {",
+        "    run() {",
+        "        this.work();",
+        "    }",
+        "}",
+    ].join("\n");
+    const method = "helper() {\n    return this.work();\n}";
+    const result = insertMethodIntoClass(source, "Foo", method);
+    assert(result !== null);
+    const lines = result!.split("\n");
+    // Method inserted before the class closing brace.
+    assertEquals(lines[lines.length - 1], "}");
+    assertEquals(lines[lines.length - 2], "    }");
+    assertEquals(lines[lines.length - 3], "        return this.work();");
+    assertEquals(lines[lines.length - 4], "    helper() {");
+});
+
+Deno.test("duplicate extractor: insertMethodIntoClass returns null when class is missing", () => {
+    const source = "class Foo { run() {} }\n";
+    assertEquals(insertMethodIntoClass(source, "Bar", "helper() {}"), null);
+});
+
+Deno.test("duplicate extractor: insertMethodIntoClass returns null on unparseable source", () => {
+    assertEquals(
+        insertMethodIntoClass("class Foo {{{{", "Foo", "helper() {}"),
+        null,
+    );
+});
+
+Deno.test("duplicate extractor: reindentBlock handles blank, base, and mixed-indent lines", () => {
+    // Blank lines pass through as empty.
+    const blank = reindentBlock("foo()\n\nbar()", "    ");
+    assertEquals(blank, "    foo()\n\n    bar()");
+
+    // Common base indent is stripped then target applied, preserving depth.
+    const indented = reindentBlock("    foo()\n        body()", "    ");
+    assertEquals(indented, "    foo()\n        body()");
+
+    // Mixed indentation (tab vs spaces): the detected base is the shorter run,
+    // so a line that does not start with it is trimmed before re-indenting.
+    const mixed = reindentBlock("  foo()\n\tbar()", "    ");
+    assertEquals(mixed, "    foo()\n    bar()");
+});
+
+Deno.test("duplicate extractor: retries when instance-method placement fails to parse", async () => {
+    const source = [
+        "class Logger {",
+        "    prefix: string;",
+        "    logOrder(id: string) {",
+        "        const entry = `[${this.prefix}] ${id}`;",
+        "        console.log(entry);",
+        "    }",
+        "    logPayment(id: string) {",
+        "        const entry = `[${this.prefix}] ${id}`;",
+        "        console.log(entry);",
+        "    }",
+        "}",
+    ].join("\n");
+
+    const llm = mockLLM({
+        extraction: {
+            helperName: "formatEntry",
+            // Valid method text, but the call sites corrupt the source so it
+            // won't parse after the text edits -> insertMethodIntoClass's
+            // internal parse throws -> returns null -> retry feedback loop.
+            helperFunction:
+                "formatEntry(id: string): string {\n    return `[${this.prefix}] ${id}`;\n}\n",
+            callSites: [
+                "        this.formatEntry(id); {{\n",
+                "        this.formatEntry(id); {{\n",
+            ],
+        },
+    });
+
+    const extractor = createDuplicateExtractor(testConfig, llm);
+    const result = await extractor(source, [{ start: 6, end: 8 }]);
+    // Every attempt fails placement; nothing is applied.
+    assertEquals(result.changed, false);
+    assert(!result.source.includes("formatEntry"));
 });
 
 Deno.test("duplicate extractor: skips empty function bodies", async () => {
@@ -1413,6 +1688,7 @@ Deno.test("findDuplicateGroups skips groups with all sequences at same location"
             source: "const x = 1;",
             fingerprint: "fp_a",
             scope: "foo",
+            kind: "function",
         },
         {
             statements: [],
@@ -1421,6 +1697,7 @@ Deno.test("findDuplicateGroups skips groups with all sequences at same location"
             source: "const x = 1;",
             fingerprint: "fp_a",
             scope: "bar",
+            kind: "function",
         },
     ];
     const ranges = [{ start: 1, end: 5 }];

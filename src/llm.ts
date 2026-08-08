@@ -22,6 +22,11 @@ export interface ExtractionResult {
     callSites: string[];
 }
 
+export interface ExtractionContext {
+    kind: "instanceMethod";
+    className: string;
+}
+
 export interface LLMClient {
     nameFunction(
         context: string,
@@ -59,6 +64,7 @@ export interface LLMClient {
         fileSource: string,
         forbiddenNames: string[],
         previousFeedback?: string,
+        context?: ExtractionContext,
     ): Promise<ExtractionResult>;
 }
 
@@ -643,6 +649,7 @@ export class MoonshotClient implements LLMClient {
         fileSource: string,
         forbiddenNames: string[],
         previousFeedback?: string,
+        context?: ExtractionContext,
     ): Promise<ExtractionResult> {
         const snippet = fileSource.length > 4000
             ? fileSource.slice(0, 4000)
@@ -658,15 +665,31 @@ export class MoonshotClient implements LLMClient {
         const forbiddenSection = forbiddenNames.length
             ? `\n\nForbidden names (do NOT use these): ${forbiddenNames.join(", ")}`
             : "";
+
+        const isInstanceMethod = context?.kind === "instanceMethod";
+        const helperRequirements = isInstanceMethod
+            ? `These blocks are inside instance methods of class \`${
+                context!.className
+            }\` and reference \`this\` (which refers to the class instance).\n` +
+                `- Generate an instance METHOD on the class, using method syntax: \`helperName(params) { ... }\`\n` +
+                `- Do NOT write a \`function\` declaration or a \`static\` method\n` +
+                `- Preserve \`this\` references inside the helper (they still refer to the instance)\n` +
+                `- Each call site must invoke the helper as \`this.helperName(args)\`\n`
+            : `- Generate a top-level function declaration (not arrow function)\n`;
+
+        const toolDescription = isInstanceMethod
+            ? "Generate an instance method and call sites for duplicate code blocks in a class"
+            : "Generate a helper function and call sites for duplicate code blocks";
+
         const messages: ChatMessage[] = [
             {
                 role: "user",
                 content:
-                    `Extract a common helper function from these duplicate code blocks.\n\n` +
+                    `Extract a common helper from these duplicate code blocks.\n\n` +
                     `${blocksText}\n\n` +
                     `File source (for context):\n\`\`\`typescript\n${snippet}\n\`\`\`\n\n` +
                     `Requirements:\n` +
-                    `- Generate a top-level function declaration (not arrow function)\n` +
+                    helperRequirements +
                     `- Choose a descriptive camelCase name\n` +
                     `- Pass all necessary values as parameters\n` +
                     `- If a code block ends with a return, the call site must also return\n` +
@@ -679,8 +702,7 @@ export class MoonshotClient implements LLMClient {
             type: "function",
             function: {
                 name: "generate_extraction",
-                description:
-                    "Generate a helper function and call sites for duplicate code blocks",
+                description: toolDescription,
                 parameters: {
                     type: "object",
                     properties: {
@@ -691,8 +713,9 @@ export class MoonshotClient implements LLMClient {
                         },
                         helper_function: {
                             type: "string",
-                            description:
-                                "Complete source of the helper function declaration",
+                            description: isInstanceMethod
+                                ? "Complete source of the instance method (method syntax, no `function` keyword)"
+                                : "Complete source of the helper function declaration",
                         },
                         call_sites: {
                             type: "array",
