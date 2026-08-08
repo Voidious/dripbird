@@ -295,3 +295,7 @@ deno task install         # install the dripbird CLI globally
 
 Pre-commit hooks (via Lefthook) run `deno fmt --check`, `deno lint`, and the 100%
 coverage test suite automatically.
+
+The test suite mocks the LLM client, so it runs offline and never spends tokens. To
+validate a refactor's behavior against a real LLM, see
+[Live end-to-end testing](docs/live-e2e-testing.md).
