@@ -69,16 +69,19 @@ Local overrides take precedence over committed settings.
 
 ### Options
 
-| Option                      | Default       | Description                                                                               |
-| --------------------------- | ------------- | ----------------------------------------------------------------------------------------- |
-| `max_function_lines`        | `75`          | Line count threshold above which the function splitter will consider splitting a function |
-| `function_splitter_retries` | `2`           | Number of LLM retry attempts when naming a helper function                                |
-| `function_matcher_retries`  | `2`           | Number of LLM retry attempts when a function matcher edit fails verification              |
-| `provider`                  | `"moonshot"`  | LLM provider (currently only `"moonshot"`)                                                |
-| `model`                     | `"kimi-k2.5"` | LLM model name to use                                                                     |
-| `enabled_refactors`         | `[]`          | If non-empty, only these refactors will run                                               |
-| `disabled_refactors`        | `[]`          | These refactors will be skipped                                                           |
-| `verbose`                   | `false`       | Print detailed log output for each refactor                                               |
+| Option                          | Default       | Description                                                                               |
+| ------------------------------- | ------------- | ----------------------------------------------------------------------------------------- |
+| `max_function_lines`            | `75`          | Line count threshold above which the function splitter will consider splitting a function |
+| `function_splitter_retries`     | `2`           | Number of LLM retry attempts when naming a helper function                                |
+| `function_matcher_retries`      | `2`           | Number of LLM retry attempts when a function matcher edit fails verification              |
+| `duplicate_extractor_min_lines` | `2`           | Minimum line span for a code block to be considered for duplicate extraction              |
+| `duplicate_extractor_max_lines` | `12`          | Maximum line span for a code block to be considered for duplicate extraction              |
+| `duplicate_extractor_retries`   | `2`           | Number of LLM retry attempts when a duplicate extraction fails verification               |
+| `provider`                      | `"moonshot"`  | LLM provider (currently only `"moonshot"`)                                                |
+| `model`                         | `"kimi-k2.5"` | LLM model name to use                                                                     |
+| `enabled_refactors`             | `[]`          | If non-empty, only these refactors will run                                               |
+| `disabled_refactors`            | `[]`          | These refactors will be skipped                                                           |
+| `verbose`                       | `false`       | Print detailed log output for each refactor                                               |
 
 ### Example `dripbird.yml`
 
@@ -242,6 +245,70 @@ Skipped when:
 - The LLM rejects the match as not semantically equivalent
 - No LLM API key is configured (`MOONSHOT_API_KEY`)
 
+### 4. Duplicate extractor
+
+**Extracts structurally identical code blocks into a new helper.**
+
+When two or more code blocks within the diff are structurally identical (the same
+statements, ignoring variable names), dripbird extracts them into a new helper and
+replaces every duplicate with a call to it. Candidates are found with a pure AST
+fingerprint (no LLM); the LLM is then asked to verify the match, generate the helper
+and call sites, and review the result, with retries feeding rejection feedback
+forward.
+
+**Scope (single file):** standalone function declarations, static class methods, and
+instance class methods. A duplicate can live across any of these contexts.
+
+- **No `this` in any block:** the helper is a top-level function declaration
+  appended at the end of the file, and call sites are plain calls. This applies to
+  duplicates in free functions, static methods, and instance methods alike.
+- **A block uses `this`:** the helper is extracted as an instance method on the
+  class, placed inside the class body, and the call sites use `this.helper(...)`.
+  This is only done when every duplicate block is an instance method of the same
+  class; otherwise the group is skipped (`this` cannot be reconciled).
+
+**Before:**
+
+```typescript
+class Account {
+    logDeposit(amount: number) {
+        const record = `${this.name}: ${amount}`;
+        console.log(record);
+    }
+
+    logWithdrawal(amount: number) {
+        const record = `${this.name}: ${amount}`;
+        console.log(record);
+    }
+}
+```
+
+**After:**
+
+```typescript
+class Account {
+    logDeposit(amount: number) {
+        this.logAmount(amount);
+    }
+
+    logWithdrawal(amount: number) {
+        this.logAmount(amount);
+    }
+
+    logAmount(amount: number) {
+        const record = `${this.name}: ${amount}`;
+        console.log(record);
+    }
+}
+```
+
+Skipped when:
+
+- Fewer than two duplicate blocks overlap the diff
+- The LLM rejects the group as not actually duplicated
+- A block uses `this` but the blocks are not all instance methods of one class
+- No LLM API key is configured (`MOONSHOT_API_KEY`)
+
 ## Architecture
 
 ```
@@ -265,7 +332,8 @@ src/cli.ts                 Entry point: reads stdin, calls run()
                         └── src/refactors/
                                 ├── if_not_else.ts         Flip negated if/else
                                 ├── function_splitter.ts   Split long functions (LLM-assisted)
-                                └── function_matcher.ts    Replace duplicate code with function calls (LLM-assisted)
+                                ├── function_matcher.ts    Replace duplicate code with function calls (LLM-assisted)
+                                └── duplicate_extractor.ts Extract duplicate blocks into a helper (LLM-assisted)
 ```
 
 ### Adding a new refactor
