@@ -1258,17 +1258,77 @@ Deno.test("duplicate extractor: insertMethodIntoClass places method inside the c
     const method = "helper() {\n    return this.work();\n}";
     const result = insertMethodIntoClass(source, "Foo", method);
     assert(result !== null);
+    assertEquals(
+        result,
+        [
+            "class Foo {",
+            "    run() {",
+            "        this.work();",
+            "    }",
+            "",
+            "    helper() {",
+            "        return this.work();",
+            "    }",
+            "}",
+        ].join("\n"),
+    );
+});
+
+Deno.test("duplicate extractor: insertMethodIntoClass separates the new method with a blank line", () => {
+    // The new method is preceded by a single blank line, matching the
+    // surrounding class formatting.
+    const source = [
+        "class Foo {",
+        "    run() {",
+        "        this.work();",
+        "    }",
+        "}",
+    ].join("\n");
+    const result = insertMethodIntoClass(source, "Foo", "helper() {}");
+    assert(result !== null);
     const lines = result!.split("\n");
-    // Method inserted before the class closing brace.
-    assertEquals(lines[lines.length - 1], "}");
-    assertEquals(lines[lines.length - 2], "    }");
-    assertEquals(lines[lines.length - 3], "        return this.work();");
-    assertEquals(lines[lines.length - 4], "    helper() {");
+    // helper() { ... } is the last member before the closing brace.
+    const helperIdx = lines.findIndex((l) => l.includes("helper()"));
+    assertEquals(lines[helperIdx - 1], "");
+    assertEquals(lines[helperIdx - 2], "    }");
+});
+
+Deno.test("duplicate extractor: insertMethodIntoClass does not double up an existing blank line", () => {
+    // A blank line already precedes the class closing brace: do not add another.
+    const source = [
+        "class Foo {",
+        "    run() {",
+        "        this.work();",
+        "    }",
+        "",
+        "}",
+    ].join("\n");
+    const result = insertMethodIntoClass(source, "Foo", "helper() {}");
+    assert(result !== null);
+    const lines = result!.split("\n");
+    const helperIdx = lines.findIndex((l) => l.includes("helper()"));
+    // Exactly one blank line before the helper, not two.
+    assertEquals(lines[helperIdx - 1], "");
+    assertEquals(lines[helperIdx - 2], "    }");
 });
 
 Deno.test("duplicate extractor: insertMethodIntoClass returns null when class is missing", () => {
     const source = "class Foo { run() {} }\n";
     assertEquals(insertMethodIntoClass(source, "Bar", "helper() {}"), null);
+});
+
+Deno.test("duplicate extractor: insertMethodIntoClass does not add a leading blank for an empty prior body", () => {
+    // Degenerate single-line class: the closing brace shares line 1, so there
+    // is no prior content line. The insertion must not crash or emit a leading
+    // blank line. (The real caller only inserts into multi-line classes it just
+    // extracted from; this guards the helper's empty-input edge.)
+    const result = insertMethodIntoClass(
+        "class Foo { run() {} }",
+        "Foo",
+        "helper() {}",
+    );
+    assert(result !== null);
+    assertEquals(result!.startsWith("\n"), false);
 });
 
 Deno.test("duplicate extractor: insertMethodIntoClass returns null on unparseable source", () => {

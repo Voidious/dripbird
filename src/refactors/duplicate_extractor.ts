@@ -466,7 +466,14 @@ export function insertMethodIntoClass(
     const lines = source.split("\n");
     const before = lines.slice(0, endLine - 1);
     const after = lines.slice(endLine - 1);
-    return [...before, indented, ...after].join("\n");
+    // Separate the new method from the preceding member with a single blank
+    // line, matching conventional class formatting. A separator is only added
+    // when the prior line has content, so we never emit a leading or doubled
+    // blank line. (The class always has prior members here: we only insert into
+    // a class we just extracted instance methods from.)
+    const prevLine = before[before.length - 1] ?? "";
+    const separator = prevLine.trim() === "" ? [] : [""];
+    return [...before, ...separator, indented, ...after].join("\n");
 }
 
 export function createDuplicateExtractor(
