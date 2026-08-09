@@ -883,6 +883,90 @@ Deno.test("duplicate extractor: skips overlapping claimed ranges", async () => {
     assertEquals(result.changed, true);
 });
 
+Deno.test("duplicate extractor: extracts multiple distinct groups in one pass", async () => {
+    // Two independent duplicate patterns (logging vs math). The second group
+    // sits at higher line numbers than the first, so a stale-coordinate apply
+    // would shift its edits onto the wrong lines. This guards the re-detection
+    // loop: each group must extract against fresh, current-source coordinates.
+    const source = [
+        "function foo() {",
+        "    const timestamp = new Date().toISOString();",
+        '    console.log("result:", timestamp);',
+        "}",
+        "",
+        "function bar() {",
+        "    const timestamp = new Date().toISOString();",
+        '    console.log("result:", timestamp);',
+        "}",
+        "",
+        "function baz(a) {",
+        "    const doubled = a * 2;",
+        "    return doubled;",
+        "}",
+        "",
+        "function qux(a) {",
+        "    const doubled = a * 2;",
+        "    return doubled;",
+        "}",
+    ].join("\n");
+
+    let n = 0;
+    const llm: LLMClient = {
+        // deno-lint-ignore require-await
+        async nameFunction() {
+            return "mock";
+        },
+        // deno-lint-ignore require-await
+        async verifyFunctionMatch() {
+            return { isMatch: false, reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateCallReplacement() {
+            return "";
+        },
+        // deno-lint-ignore require-await
+        async reviewChange(): Promise<ReviewResult> {
+            return { accepted: true, feedback: "" };
+        },
+        // deno-lint-ignore require-await
+        async verifyDuplicateMatch(): Promise<DuplicateVerifyResult> {
+            return { isMatch: true, excludeIndices: [], reason: "ok" };
+        },
+        // deno-lint-ignore require-await
+        async generateExtraction(): Promise<ExtractionResult> {
+            n++;
+            if (n % 2 === 1) {
+                return {
+                    helperName: "logTs",
+                    helperFunction:
+                        "function logTs() {\n    const timestamp = new Date().toISOString();\n    console.log('result:', timestamp);\n}\n",
+                    callSites: ["    logTs();\n", "    logTs();\n"],
+                };
+            }
+            return {
+                helperName: "doubleIt",
+                helperFunction:
+                    "function doubleIt(a) {\n    const doubled = a * 2;\n    return doubled;\n}\n",
+                callSites: [
+                    "    return doubleIt(a);\n",
+                    "    return doubleIt(a);\n",
+                ],
+            };
+        },
+    };
+
+    const extractor = createDuplicateExtractor(testConfig, llm);
+    const result = await extractor(source, [{ start: 1, end: 18 }]);
+    assertEquals(result.changed, true);
+    assert(result.source.includes("logTs"), "first group should be extracted");
+    assert(
+        result.source.includes("doubleIt"),
+        "second group should be extracted (not dropped after line shift)",
+    );
+    assert(result.source.includes("function logTs"));
+    assert(result.source.includes("function doubleIt"));
+});
+
 Deno.test("duplicate extractor: passes feedback on retry", async () => {
     const source = [
         "function foo() {",

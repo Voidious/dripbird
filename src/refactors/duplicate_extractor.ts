@@ -252,15 +252,14 @@ function overlapsRange(
     );
 }
 
-function overlapsAny(
-    startLine: number,
-    endLine: number,
-    ranges: Array<{ start: number; end: number }>,
-): boolean {
-    return ranges.some(
-        (r) => startLine <= r.end && endLine >= r.start,
-    );
-}
+// Range that overlaps every block. Re-detection passes (see
+// createDuplicateExtractor) work from mutated coordinates, so the diff-range
+// gate is opened here and diff eligibility is enforced via the
+// approved-fingerprint set instead, keeping the original diff semantics exact.
+const ANY_RANGE: ChangedRange[] = [{
+    start: Number.MIN_SAFE_INTEGER,
+    end: Number.MAX_SAFE_INTEGER,
+}];
 
 export function findDuplicateGroups(
     sequences: SeqInfo[],
@@ -491,26 +490,56 @@ export function createDuplicateExtractor(
             `dripbird: duplicate_extractor: ${groups.length} duplicate group(s) found`,
         );
 
+        // A fingerprint is eligible for extraction only if its group overlapped
+        // the diff in the ORIGINAL source (decided once, exactly, above).
+        // Subsequent re-detection passes mutate the source, shifting line
+        // numbers, so they reuse this set rather than re-checking the now-shifted
+        // diff ranges.
+        const approvedFingerprints = new Set(
+            groups.map((g) => g[0].fingerprint),
+        );
+
         const descriptions: string[] = [];
         let currentSource = source;
-        const claimedRanges: Array<{ start: number; end: number }> = [];
+        const doneFingerprints = new Set<string>();
 
-        for (const group of groups) {
-            const filtered = group.filter(
-                (seq) => !overlapsAny(seq.startLine, seq.endLine, claimedRanges),
+        // Extract one group per pass, re-detecting from the (possibly mutated)
+        // source each time so block coordinates stay exact after every
+        // extraction. The loop is bounded by the number of eligible fingerprints:
+        // each pass marks exactly one as done before continuing.
+        for (let pass = 0; pass < approvedFingerprints.size + 1; pass++) {
+            // currentSource is always parseable here: it starts as `source`
+            // (parsed successfully above) and is only ever reassigned to a
+            // proposedSource that already passed its own parse check.
+            const passAst = parseSource(currentSource);
+
+            const passSeqs = collectSequences(
+                passAst,
+                currentSource.split("\n"),
+                config.duplicate_extractor_min_lines,
+                config.duplicate_extractor_max_lines,
             );
-            if (filtered.length < 2) continue;
+            const passGroups = findDuplicateGroups(passSeqs, ANY_RANGE);
+            const group = passGroups.find(
+                (g) =>
+                    approvedFingerprints.has(g[0].fingerprint) &&
+                    !doneFingerprints.has(g[0].fingerprint),
+            );
+            if (!group) break;
+
+            const fingerprint = group[0].fingerprint;
+            doneFingerprints.add(fingerprint);
 
             log?.(
-                `dripbird: duplicate_extractor: candidate group with ${filtered.length} blocks: ${
-                    filtered.map((s) => `${s.startLine}-${s.endLine}`).join(", ")
+                `dripbird: duplicate_extractor: candidate group with ${group.length} blocks: ${
+                    group.map((s) => `${s.startLine}-${s.endLine}`).join(", ")
                 }`,
             );
 
-            const codeBlocks = filtered.map((seq) => seq.source);
+            const codeBlocks = group.map((seq) => seq.source);
             const verifyResult = await llm.verifyDuplicateMatch(
                 codeBlocks,
-                source,
+                currentSource,
             );
             if (!verifyResult.isMatch) {
                 log?.(
@@ -519,10 +548,10 @@ export function createDuplicateExtractor(
                 continue;
             }
 
-            let remaining = filtered;
+            let remaining = group;
             if (verifyResult.excludeIndices.length > 0) {
                 const exclude = new Set(verifyResult.excludeIndices);
-                remaining = filtered.filter((_, i) => !exclude.has(i));
+                remaining = group.filter((_, i) => !exclude.has(i));
                 if (remaining.length < 2) {
                     log?.(
                         `dripbird: duplicate_extractor: too few blocks after exclusion`,
@@ -655,13 +684,6 @@ export function createDuplicateExtractor(
 
                 currentSource = proposedSource;
                 accepted = true;
-
-                for (const { seq } of sortedIndices) {
-                    claimedRanges.push({
-                        start: seq.startLine,
-                        end: seq.endLine,
-                    });
-                }
 
                 descriptions.push(
                     `extracted duplicate code into ${extraction.helperName} (replacing ${remaining.length} blocks)`,
