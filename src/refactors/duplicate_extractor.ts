@@ -306,6 +306,30 @@ export function findDuplicateGroups(
     return groups;
 }
 
+/**
+ * Pick a non-overlapping subset of same-fingerprint blocks (greedy by
+ * earliest start line). A single fingerprint group can contain overlapping
+ * sub-sequences when a function body has several structurally identical
+ * statements (e.g. `handle(x); handle(y); handle(z);` yields the overlapping
+ * pairs [x,y] and [y,z]). Sending overlapping blocks to the LLM and replacing
+ * them with text edits corrupts the source, so the group is reduced to a
+ * disjoint set of representatives before extraction.
+ */
+export function selectNonOverlapping(seqs: SeqInfo[]): SeqInfo[] {
+    const sorted = [...seqs].sort(
+        (a, b) => a.startLine - b.startLine || a.endLine - b.endLine,
+    );
+    const result: SeqInfo[] = [];
+    let lastEnd = -1;
+    for (const seq of sorted) {
+        if (seq.startLine > lastEnd) {
+            result.push(seq);
+            lastEnd = seq.endLine;
+        }
+    }
+    return result;
+}
+
 function detectBaseIndent(text: string): string {
     let minLen = Infinity;
     let result = "";
@@ -520,15 +544,20 @@ export function createDuplicateExtractor(
                 config.duplicate_extractor_max_lines,
             );
             const passGroups = findDuplicateGroups(passSeqs, ANY_RANGE);
-            const group = passGroups.find(
+            const found = passGroups.find(
                 (g) =>
                     approvedFingerprints.has(g[0].fingerprint) &&
                     !doneFingerprints.has(g[0].fingerprint),
             );
-            if (!group) break;
+            if (!found) break;
 
-            const fingerprint = group[0].fingerprint;
+            const fingerprint = found[0].fingerprint;
             doneFingerprints.add(fingerprint);
+
+            // Reduce to a non-overlapping set of blocks before extraction so
+            // text edits never target overlapping line ranges.
+            const group = selectNonOverlapping(found);
+            if (group.length < 2) continue;
 
             log?.(
                 `dripbird: duplicate_extractor: candidate group with ${group.length} blocks: ${

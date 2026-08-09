@@ -8,6 +8,7 @@ import {
     findDuplicateGroups,
     insertMethodIntoClass,
     reindentBlock,
+    selectNonOverlapping,
 } from "../../src/refactors/duplicate_extractor.ts";
 import type { SeqInfo } from "../../src/refactors/duplicate_extractor.ts";
 import type {
@@ -1787,4 +1788,201 @@ Deno.test("findDuplicateGroups skips groups with all sequences at same location"
     const ranges = [{ start: 1, end: 5 }];
     const groups = findDuplicateGroups(seqs, ranges);
     assertEquals(groups.length, 0);
+});
+
+Deno.test("duplicate extractor: selectNonOverlapping keeps disjoint blocks unchanged", () => {
+    const seqs: SeqInfo[] = [
+        {
+            statements: [],
+            startLine: 2,
+            endLine: 3,
+            source: "",
+            fingerprint: "fp",
+            scope: "foo",
+            kind: "function",
+        },
+        {
+            statements: [],
+            startLine: 7,
+            endLine: 8,
+            source: "",
+            fingerprint: "fp",
+            scope: "bar",
+            kind: "function",
+        },
+    ];
+    assertEquals(selectNonOverlapping(seqs).length, 2);
+});
+
+Deno.test("duplicate extractor: selectNonOverlapping drops overlapping sub-sequences", () => {
+    // Three identical-normalized statements in one body yield overlapping pairs
+    // [2-3] and [3-4] (shared line 3); a disjoint block lives at [7-8].
+    const seqs: SeqInfo[] = [
+        {
+            statements: [],
+            startLine: 2,
+            endLine: 3,
+            source: "",
+            fingerprint: "fp",
+            scope: "foo",
+            kind: "function",
+        },
+        {
+            statements: [],
+            startLine: 3,
+            endLine: 4,
+            source: "",
+            fingerprint: "fp",
+            scope: "foo",
+            kind: "function",
+        },
+        {
+            statements: [],
+            startLine: 7,
+            endLine: 8,
+            source: "",
+            fingerprint: "fp",
+            scope: "bar",
+            kind: "function",
+        },
+    ];
+    const kept = selectNonOverlapping(seqs);
+    assertEquals(kept.length, 2);
+    assertEquals(kept[0].startLine, 2);
+    assertEquals(kept[1].startLine, 7);
+});
+
+Deno.test("duplicate extractor: selectNonOverlapping preserves adjacent (non-overlapping) blocks", () => {
+    // [2-3] and [4-5] touch but share no line -> both kept.
+    const seqs: SeqInfo[] = [
+        {
+            statements: [],
+            startLine: 2,
+            endLine: 3,
+            source: "",
+            fingerprint: "fp",
+            scope: "foo",
+            kind: "function",
+        },
+        {
+            statements: [],
+            startLine: 4,
+            endLine: 5,
+            source: "",
+            fingerprint: "fp",
+            scope: "foo",
+            kind: "function",
+        },
+    ];
+    assertEquals(selectNonOverlapping(seqs).length, 2);
+});
+
+Deno.test("duplicate extractor: selectNonOverlapping orders tied start lines by end line", () => {
+    // Same start line, different end line: the earlier-ending span sorts first
+    // and is kept; the longer overlapping one is dropped. Exercises the sort's
+    // end-line tiebreak.
+    const seqs: SeqInfo[] = [
+        {
+            statements: [],
+            startLine: 2,
+            endLine: 3,
+            source: "",
+            fingerprint: "fp",
+            scope: "foo",
+            kind: "function",
+        },
+        {
+            statements: [],
+            startLine: 2,
+            endLine: 5,
+            source: "",
+            fingerprint: "fp",
+            scope: "foo",
+            kind: "function",
+        },
+    ];
+    const kept = selectNonOverlapping(seqs);
+    assertEquals(kept.length, 1);
+    assertEquals(kept[0].endLine, 3);
+});
+
+Deno.test("duplicate extractor: overlapping sub-sequences are de-overlapped before extraction", async () => {
+    // With max_lines=2, only 2-statement spans are collected. Three identical
+    // statements per function produce overlapping pairs [x,y] and [y,z] with the
+    // same fingerprint. The extractor must send the LLM a de-overlapped set
+    // (2 blocks) rather than the overlapping 4, then extract cleanly.
+    const maxLinesConfig = { ...testConfig, duplicate_extractor_max_lines: 2 };
+    const source = [
+        "function foo() {",
+        "    handle(x);",
+        "    handle(y);",
+        "    handle(z);",
+        "}",
+        "",
+        "function bar() {",
+        "    handle(x);",
+        "    handle(y);",
+        "    handle(z);",
+        "}",
+    ].join("\n");
+
+    let verifyBlockCount = 0;
+    const llm: LLMClient = {
+        // deno-lint-ignore require-await
+        async nameFunction() {
+            return "mock";
+        },
+        // deno-lint-ignore require-await
+        async verifyFunctionMatch() {
+            return { isMatch: false, reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateCallReplacement() {
+            return "";
+        },
+        // deno-lint-ignore require-await
+        async reviewChange(): Promise<ReviewResult> {
+            return { accepted: true, feedback: "" };
+        },
+        // deno-lint-ignore require-await
+        async verifyDuplicateMatch(
+            blocks: string[],
+        ): Promise<DuplicateVerifyResult> {
+            verifyBlockCount = blocks.length;
+            return { isMatch: true, excludeIndices: [], reason: "ok" };
+        },
+        // deno-lint-ignore require-await
+        async generateExtraction(): Promise<ExtractionResult> {
+            return {
+                helperName: "doHandles",
+                helperFunction:
+                    "function doHandles() {\n    handle(x);\n    handle(y);\n    handle(z);\n}\n",
+                callSites: ["    doHandles();\n", "    doHandles();\n"],
+            };
+        },
+    };
+
+    const extractor = createDuplicateExtractor(maxLinesConfig, llm);
+    const result = await extractor(source, [{ start: 1, end: 10 }]);
+    assertEquals(verifyBlockCount, 2);
+    assertEquals(result.changed, true);
+    assert(result.source.includes("doHandles"));
+});
+
+Deno.test("duplicate extractor: skips group that collapses to a single block after de-overlap", async () => {
+    // One function with three identical statements: only the overlapping pairs
+    // [2-3] and [3-4] are collected (max_lines=2). They share a fingerprint but
+    // overlap, so de-overlap leaves a single block -> the group is skipped.
+    const maxLinesConfig = { ...testConfig, duplicate_extractor_max_lines: 2 };
+    const source = [
+        "function foo() {",
+        "    handle(x);",
+        "    handle(y);",
+        "    handle(z);",
+        "}",
+    ].join("\n");
+
+    const extractor = createDuplicateExtractor(maxLinesConfig, acceptAll);
+    const result = await extractor(source, [{ start: 1, end: 5 }]);
+    assertEquals(result.changed, false);
 });
