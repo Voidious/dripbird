@@ -5,6 +5,7 @@ import type { ChangedRange } from "../diff.ts";
 import type { Config } from "../config.ts";
 import type { Refactor, RefactorContext, RefactorResult } from "../engine.ts";
 import type { LLMClient } from "../llm.ts";
+import type { TypeChecker, TypeDiagnostic } from "../type_checker.ts";
 import { collectFileLevelBindings, JS_TS_KEYWORDS } from "./function_splitter.ts";
 
 export interface SeqInfo {
@@ -479,6 +480,7 @@ export function insertMethodIntoClass(
 export function createDuplicateExtractor(
     config: Config,
     llm: LLMClient,
+    typeChecker?: TypeChecker,
 ): Refactor {
     return async (
         source: string,
@@ -533,6 +535,22 @@ export function createDuplicateExtractor(
         const descriptions: string[] = [];
         let currentSource = source;
         const doneFingerprints = new Set<string>();
+
+        // Baseline type-check diagnostics for the ORIGINAL source. The in-process
+        // checker can't resolve Deno npm:/jsr: imports, so a standalone file
+        // always carries some constant noise (TS2307 "cannot find module",
+        // TS7006 implicit-any on unresolved bindings). Capturing it once and
+        // rejecting only NEW (code, message) diagnostics means that constant
+        // noise cancels out — a valid extraction introduces zero new type
+        // errors, while a build-breaker (e.g. assigning to a `const`) shows up
+        // as a fresh diagnostic. No-op when no typeChecker is wired.
+        const baselineErrorKeys = new Set<string>();
+        if (typeChecker) {
+            await typeChecker.initForSource(currentSource, _context?.filePath);
+            for (const e of typeChecker.getSemanticErrors()) {
+                baselineErrorKeys.add(`${e.code}:${e.message}`);
+            }
+        }
 
         // Extract one group per pass, re-detecting from the (possibly mutated)
         // source each time so block coordinates stay exact after every
@@ -701,6 +719,40 @@ export function createDuplicateExtractor(
                     lastFeedback =
                         "The previous extraction did not produce valid syntax. The result could not be parsed.";
                     continue;
+                }
+
+                // Deterministic type-check gate: reject any proposedSource
+                // whose diagnostics contain a (code, message) pair not present
+                // in the original-source baseline. This catches build-breakers
+                // the syntax parse misses (e.g. assigning to a `const`) without
+                // relying on LLM review, and feeds the compiler messages back
+                // so the next attempt can fix them. No-op without a typeChecker.
+                if (typeChecker) {
+                    await typeChecker.initForSource(
+                        proposedSource,
+                        _context?.filePath,
+                    );
+                    const newErrors: TypeDiagnostic[] = typeChecker
+                        .getSemanticErrors()
+                        .filter((e) =>
+                            !baselineErrorKeys.has(`${e.code}:${e.message}`)
+                        );
+                    if (newErrors.length > 0) {
+                        log?.(
+                            `dripbird: duplicate_extractor: type-check failed (attempt ${
+                                attempt + 1
+                            }/${maxAttempts}): ${
+                                newErrors.map((e) => `[TS${e.code}] ${e.message}`)
+                                    .join("; ")
+                            }`,
+                        );
+                        lastFeedback =
+                            "The previous extraction introduced type errors. Keep the call sites and helper, but fix these so the file still type-checks:\n" +
+                            newErrors.map((e) =>
+                                `  line ${e.line}: [TS${e.code}] ${e.message}`
+                            ).join("\n");
+                        continue;
+                    }
                 }
 
                 const reviewResult = await llm.reviewChange(

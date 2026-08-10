@@ -166,7 +166,7 @@ export async function runInDir(
         });
         namedRefactors.push({
             name: "duplicate_extractor",
-            refactor: createDuplicateExtractor(config, llm),
+            refactor: createDuplicateExtractor(config, llm, typeChecker),
         });
     }
 

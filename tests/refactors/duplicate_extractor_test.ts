@@ -18,6 +18,7 @@ import type {
     ReviewResult,
 } from "../../src/llm.ts";
 import type { Config } from "../../src/config.ts";
+import type { TypeChecker, TypeDiagnostic } from "../../src/type_checker.ts";
 
 const testConfig: Config = {
     max_function_lines: 75,
@@ -78,6 +79,25 @@ function mockLLM(options: {
 }
 
 const acceptAll = mockLLM({});
+
+function mockTypeChecker(
+    errorsFor: (source: string) => TypeDiagnostic[],
+): TypeChecker {
+    let current = "";
+    return {
+        // deno-lint-ignore require-await
+        async initForSource(source: string) {
+            current = source;
+        },
+        getTypeAtPosition() {
+            return null;
+        },
+        getSemanticErrors() {
+            return errorsFor(current);
+        },
+        dispose() {},
+    };
+}
 
 Deno.test("duplicate extractor: no duplicates when no functions", async () => {
     const source = `const x = 1;\nconst y = 2;\n`;
@@ -2045,4 +2065,133 @@ Deno.test("duplicate extractor: skips group that collapses to a single block aft
     const extractor = createDuplicateExtractor(maxLinesConfig, acceptAll);
     const result = await extractor(source, [{ start: 1, end: 5 }]);
     assertEquals(result.changed, false);
+});
+
+Deno.test("duplicate extractor: type-check gate blocks build-breaker that LLM review accepts", async () => {
+    // Two identical blocks so a duplicate group is found. acceptAll makes
+    // verify + review pass unconditionally; the default mockLLM extraction
+    // appends a helper named "extractedHelper". The mock TypeChecker reports
+    // a fresh TS2588 on any proposed source (which always contains that
+    // helper) but none on the original — so the gate must reject every
+    // attempt even though the LLM was happy to accept it.
+    const source = [
+        "function foo() {",
+        "    const timestamp = new Date().toISOString();",
+        '    console.log("result:", timestamp);',
+        "}",
+        "",
+        "function bar() {",
+        "    const timestamp = new Date().toISOString();",
+        '    console.log("result:", timestamp);',
+        "}",
+    ].join("\n");
+
+    const typeChecker = mockTypeChecker((src) => {
+        if (src.includes("extractedHelper")) {
+            return [{
+                code: 2588,
+                message: "Cannot assign to 'x' because it is a constant.",
+                line: 3,
+                column: 5,
+            }];
+        }
+        return [];
+    });
+
+    const extractor = createDuplicateExtractor(
+        testConfig,
+        acceptAll,
+        typeChecker,
+    );
+    const result = await extractor(source, [{ start: 1, end: 9 }]);
+    assertEquals(result.changed, false);
+    assert(!result.source.includes("extractedHelper"));
+});
+
+Deno.test("duplicate extractor: type-check gate retries then accepts once type errors clear", async () => {
+    const source = [
+        "function foo() {",
+        "    const timestamp = new Date().toISOString();",
+        '    console.log("result:", timestamp);',
+        "}",
+        "",
+        "function bar() {",
+        "    const timestamp = new Date().toISOString();",
+        '    console.log("result:", timestamp);',
+        "}",
+    ].join("\n");
+
+    let n = 0;
+    const llm: LLMClient = {
+        // deno-lint-ignore require-await
+        async nameFunction() {
+            return "mock";
+        },
+        // deno-lint-ignore require-await
+        async verifyFunctionMatch() {
+            return { isMatch: false, reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateCallReplacement() {
+            return "";
+        },
+        // deno-lint-ignore require-await
+        async reviewChange(): Promise<ReviewResult> {
+            return { accepted: true, feedback: "" };
+        },
+        // deno-lint-ignore require-await
+        async verifyDuplicateMatch(): Promise<DuplicateVerifyResult> {
+            return { isMatch: true, excludeIndices: [], reason: "ok" };
+        },
+        // deno-lint-ignore require-await
+        async generateExtraction(): Promise<ExtractionResult> {
+            n++;
+            if (n === 1) {
+                return {
+                    helperName: "badHelper",
+                    helperFunction: "function badHelper() {}\n",
+                    callSites: ["    badHelper();\n", "    badHelper();\n"],
+                };
+            }
+            return {
+                helperName: "goodHelper",
+                helperFunction: "function goodHelper() {}\n",
+                callSites: ["    goodHelper();\n", "    goodHelper();\n"],
+            };
+        },
+    };
+
+    // A constant "noise" diagnostic present in BOTH the original and any
+    // proposed source (mirroring unresolved-module noise) — the baseline
+    // must cancel it. The bad extraction introduces an additional TS2588;
+    // the good extraction does not.
+    const noise: TypeDiagnostic = {
+        code: 2307,
+        message: "Cannot find module 'recast'.",
+        line: 1,
+        column: 1,
+    };
+    const typeChecker = mockTypeChecker((src) => {
+        const errors: TypeDiagnostic[] = [noise];
+        if (src.includes("badHelper")) {
+            errors.push({
+                code: 2588,
+                message: "Cannot assign to 'counter' because it is a constant.",
+                line: 5,
+                column: 10,
+            });
+        }
+        return errors;
+    });
+
+    const extractor = createDuplicateExtractor(testConfig, llm, typeChecker);
+    const result = await extractor(
+        source,
+        [{ start: 1, end: 9 }],
+        { filePath: "/tmp/example.ts" },
+    );
+    assertEquals(result.changed, true);
+    assert(result.source.includes("goodHelper"));
+    assert(!result.source.includes("badHelper"));
+    assertEquals(n, 2);
 });

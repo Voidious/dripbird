@@ -1,9 +1,24 @@
 // deno-lint-ignore-file no-explicit-any no-this-alias
 import * as babelParser from "@babel/parser";
 
+export interface TypeDiagnostic {
+    code: number;
+    message: string;
+    line: number;
+    column: number;
+}
+
 export interface TypeChecker {
     initForSource(source: string, filePath?: string): Promise<void>;
     getTypeAtPosition(line: number, column: number): string | null;
+    /**
+     * Semantic (and syntactic) diagnostics for the most recently
+     * initForSource-loaded file, scoped to THAT file only. Diagnostics from
+     * other modules or lib files are excluded so callers can compare a
+     * before/after baseline without cross-file noise. Returns [] when the
+     * checker is unavailable (e.g. the TS module failed to load).
+     */
+    getSemanticErrors(): TypeDiagnostic[];
     dispose(): void;
 }
 
@@ -13,6 +28,7 @@ export class TypeCheckerImpl implements TypeChecker {
     private program: any = null;
     private checker: any = null;
     private sourceFile: any = null;
+    private targetPath: string | null = null;
     private _loadTs: () => Promise<any>;
 
     constructor(loadTs?: () => Promise<any>) {
@@ -35,6 +51,7 @@ export class TypeCheckerImpl implements TypeChecker {
         this.program = null;
         this.checker = null;
         this.sourceFile = null;
+        this.targetPath = null;
         const ts = this.ts;
         const targetPath = filePath ?? "/__dripbird_virtual__.ts";
         const compilerOptions = {
@@ -73,10 +90,39 @@ export class TypeCheckerImpl implements TypeChecker {
             this.checker = this.program.getTypeChecker();
             this.sourceFile = this.program.getSourceFile(targetPath) ??
                 null;
+            this.targetPath = targetPath;
         } catch {
             this.program = null;
             this.checker = null;
             this.sourceFile = null;
+            this.targetPath = null;
+        }
+    }
+
+    getSemanticErrors(): TypeDiagnostic[] {
+        if (!this.ts || !this.program || !this.sourceFile) {
+            return [];
+        }
+        const ts = this.ts;
+        const target = this.targetPath!.replace(/\\/g, "/");
+        try {
+            const diags = ts.getPreEmitDiagnostics(this.program);
+            const result: TypeDiagnostic[] = [];
+            for (const d of diags) {
+                if (!d.file) continue;
+                if (d.file.fileName.replace(/\\/g, "/") !== target) continue;
+                const pos = d.start ?? 0;
+                const lc = d.file.getLineAndCharacterOfPosition(pos);
+                result.push({
+                    code: d.code,
+                    message: ts.flattenDiagnosticMessageText(d.messageText, "\n"),
+                    line: lc.line + 1,
+                    column: lc.character + 1,
+                });
+            }
+            return result;
+        } catch {
+            return [];
         }
     }
 
@@ -116,6 +162,7 @@ export class TypeCheckerImpl implements TypeChecker {
         this.program = null;
         this.checker = null;
         this.sourceFile = null;
+        this.targetPath = null;
     }
 
     private matchesPath(fileName: string, targetPath: string): boolean {

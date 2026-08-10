@@ -2221,6 +2221,9 @@ function nullTypeChecker(): TypeChecker {
         getTypeAtPosition() {
             return null;
         },
+        getSemanticErrors() {
+            return [];
+        },
         dispose() {},
     };
 }
@@ -2318,6 +2321,9 @@ Deno.test("function splitter handles unparseable type from TypeChecker", async (
         async initForSource() {},
         getTypeAtPosition() {
             return "!!!not a type!!!";
+        },
+        getSemanticErrors() {
+            return [];
         },
         dispose() {},
     };
