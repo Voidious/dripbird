@@ -1403,3 +1403,78 @@ Deno.test("MoonshotClient generateExtraction uses top-level prompt without conte
     assert(!content.includes("instance"));
     assert(!content.includes("method syntax"));
 });
+
+function captureToolCallFetch(
+    toolName: string,
+    toolArgs: Record<string, unknown>,
+): { fetchFn: typeof fetch; getRequest: () => Request | null } {
+    const captured: { req: Request | null } = { req: null };
+    const fetchFn = ((input: RequestInfo | URL, init?: RequestInit) => {
+        captured.req = new Request(input as URL, init);
+        return Promise.resolve(
+            new Response(
+                JSON.stringify({
+                    choices: [{
+                        message: {
+                            content: null,
+                            tool_calls: [{
+                                function: {
+                                    name: toolName,
+                                    arguments: JSON.stringify(toolArgs),
+                                },
+                            }],
+                        },
+                    }],
+                    usage: {
+                        prompt_tokens: 10,
+                        completion_tokens: 5,
+                        total_tokens: 15,
+                    },
+                }),
+            ),
+        );
+    }) as unknown as typeof fetch;
+    return { fetchFn, getRequest: () => captured.req };
+}
+
+Deno.test("MoonshotClient reviewChange prompt documents hoisting and early-return propagation", async () => {
+    const { fetchFn, getRequest } = captureToolCallFetch("review", {
+        accepted: true,
+        feedback: "",
+    });
+    const client = new MoonshotClient("key", "model", fetchFn);
+    await client.reviewChange("original", "proposed", "extract duplicate");
+    const body = await getRequest()!.json();
+    const content = body.messages[0].content as string;
+    assert(
+        content.includes("hoisted"),
+        "prompt should note top-level function declarations are hoisted",
+    );
+    assert(
+        content.includes("EARLY"),
+        "prompt should cover early return/break/continue propagation",
+    );
+    assert(
+        content.includes("END of the file"),
+        "prompt should clarify that appending a helper at file end is valid",
+    );
+});
+
+Deno.test("MoonshotClient verifyDuplicateMatch prompt rejects mutable shared state", async () => {
+    const { fetchFn, getRequest } = captureToolCallFetch(
+        "evaluate_duplicates",
+        { is_match: false, exclude_indices: [], reason: "mutable state" },
+    );
+    const client = new MoonshotClient("key", "model", fetchFn);
+    await client.verifyDuplicateMatch(["let c = 0;"], "src");
+    const body = await getRequest()!.json();
+    const content = body.messages[0].content as string;
+    assert(
+        content.includes("SELF-CONTAINED"),
+        "prompt should require blocks to be self-contained",
+    );
+    assert(
+        content.includes("mutable local state"),
+        "prompt should flag mutable local state mutated outside the block",
+    );
+});

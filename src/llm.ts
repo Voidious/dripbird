@@ -536,12 +536,13 @@ export class MoonshotClient implements LLMClient {
                     `Description: ${description}\n\n` +
                     `Original file:\n\`\`\`typescript\n${originalSource.trim()}\n\`\`\`\n\n` +
                     `Modified file:\n\`\`\`typescript\n${proposedSource.trim()}\n\`\`\`\n\n` +
-                    `Both are complete files. Only the lines described in the description should differ between them. Check each of the following:\n` +
+                    `Both are complete files. The change may append a new helper function at the END of the file or after the code that calls it — this is expected and is NOT a defect: top-level \`function\` declarations are hoisted in JavaScript/TypeScript, so a helper defined after its callers is reachable at runtime. Do NOT reject a change solely because a new function appears near the bottom of the file.\n\n` +
+                    `Check each of the following and reject ONLY if you find a real semantic defect:\n` +
                     `1. Every variable read in the changed lines that is not locally assigned is passed as a parameter or available in scope\n` +
                     `2. Every variable assigned in the changed lines and used afterward is still defined\n` +
                     `3. No parameter is assigned before it is first read in the called function\n` +
-                    `4. If the changed lines originally ended with a return, the replacement also propagates that return value\n` +
-                    `5. Only the lines described in the description were modified — all other lines must be identical between the two files\n` +
+                    `4. Control flow is preserved: if the original block ENDED with a \`return\`, the call site propagates that value; and if the block contained an EARLY \`return\`/\`break\`/\`continue\`/\`throw\` that exited an enclosing scope, the helper reproduces that control flow internally and each call site propagates it (e.g. \`const r = helper(...); if (r === null) return null;\`)\n` +
+                    `5. Only the lines described in the description were modified, plus the new helper function definition — all other original lines must be identical between the two files\n` +
                     `6. The replacement preserves the original indentation of the changed lines\n` +
                     `Use the review tool to answer.`,
             },
@@ -596,7 +597,8 @@ export class MoonshotClient implements LLMClient {
                     `${blocksText}\n\n` +
                     `File source (for context):\n\`\`\`typescript\n${snippet}\n\`\`\`\n\n` +
                     `Do these code blocks perform the same semantic operation, such that they could all be replaced by calls to a single helper function? ` +
-                    `If most match but some don't, exclude the non-matching ones. Use the evaluate_duplicates tool.`,
+                    `The blocks must form a SELF-CONTAINED operation: every value they read must be a parameter, locally produced, or otherwise safely passable into a helper. If a block declares mutable local state (e.g. a counter, accumulator, or flag) that is read or mutated by code OUTSIDE the block — such as a variable closed over by a visitor/callback defined later in the same function — the blocks are NOT safely extractable (returning a primitive by value breaks the shared mutable state), so return is_match=false. ` +
+                    `If most blocks match but some don't, exclude the non-matching ones. Use the evaluate_duplicates tool.`,
             },
         ];
         const tool: ToolDefinition = {
