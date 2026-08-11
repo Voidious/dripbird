@@ -10,6 +10,32 @@ export interface ReviewResult {
     feedback: string;
 }
 
+/**
+ * One call-site replacement to review as part of an extraction. Pairing the
+ * original block with its replacement (and where it lives) lets the reviewer
+ * judge behavioral preservation per-site instead of diffing two whole files.
+ */
+export interface ReviewCallSite {
+    /** Human-readable location, e.g. "lines 603-608 (buildCallFromMapping)". */
+    location: string;
+    /** The duplicate block that was replaced. */
+    originalBlock: string;
+    /** The call-site source that replaced it. */
+    replacement: string;
+}
+
+/**
+ * Structured change description for an extraction review. When supplied to
+ * `reviewChange`, the reviewer receives the new helper plus each call site
+ * (original vs. replacement) as labeled inputs rather than two whole files.
+ */
+export interface ReviewEntities {
+    /** The new helper source (function declaration or instance method). */
+    helperFunction: string;
+    /** Per-site original block + replacement + location. */
+    callSites: ReviewCallSite[];
+}
+
 export interface DuplicateVerifyResult {
     isMatch: boolean;
     excludeIndices: number[];
@@ -52,6 +78,7 @@ export interface LLMClient {
         originalSource: string,
         proposedSource: string,
         description: string,
+        entities?: ReviewEntities,
     ): Promise<ReviewResult>;
 
     verifyDuplicateMatch(
@@ -528,25 +555,32 @@ export class MoonshotClient implements LLMClient {
         originalSource: string,
         proposedSource: string,
         description: string,
+        entities?: ReviewEntities,
     ): Promise<ReviewResult> {
-        const messages: ChatMessage[] = [
-            {
-                role: "user",
-                content: `Review this proposed code change.\n\n` +
-                    `Description: ${description}\n\n` +
-                    `Original file:\n\`\`\`typescript\n${originalSource.trim()}\n\`\`\`\n\n` +
-                    `Modified file:\n\`\`\`typescript\n${proposedSource.trim()}\n\`\`\`\n\n` +
-                    `Both are complete files. The change may append a new helper function at the END of the file or after the code that calls it — this is expected and is NOT a defect: top-level \`function\` declarations are hoisted in JavaScript/TypeScript, so a helper defined after its callers is reachable at runtime. Do NOT reject a change solely because a new function appears near the bottom of the file.\n\n` +
-                    `Check each of the following and reject ONLY if you find a real semantic defect:\n` +
-                    `1. Every variable read in the changed lines that is not locally assigned is passed as a parameter or available in scope\n` +
-                    `2. Every variable assigned in the changed lines and used afterward is still defined\n` +
-                    `3. No parameter is assigned before it is first read in the called function\n` +
-                    `4. Control flow is preserved: if the original block ENDED with a \`return\`, the call site propagates that value; and if the block contained an EARLY \`return\`/\`break\`/\`continue\`/\`throw\` that exited an enclosing scope, the helper reproduces that control flow internally and each call site propagates it (e.g. \`const r = helper(...); if (r === null) return null;\`)\n` +
-                    `5. Only the lines described in the description were modified, plus the new helper function definition — all other original lines must be identical between the two files\n` +
-                    `6. The replacement preserves the original indentation of the changed lines\n` +
-                    `Use the review tool to answer.`,
-            },
-        ];
+        const messages: ChatMessage[] = entities
+            ? this.buildExtractionReviewMessages(
+                proposedSource,
+                description,
+                entities,
+            )
+            : [
+                {
+                    role: "user",
+                    content: `Review this proposed code change.\n\n` +
+                        `Description: ${description}\n\n` +
+                        `Original file:\n\`\`\`typescript\n${originalSource.trim()}\n\`\`\`\n\n` +
+                        `Modified file:\n\`\`\`typescript\n${proposedSource.trim()}\n\`\`\`\n\n` +
+                        `Both are complete files. The change may append a new helper function at the END of the file or after the code that calls it — this is expected and is NOT a defect: top-level \`function\` declarations are hoisted in JavaScript/TypeScript, so a helper defined after its callers is reachable at runtime. Do NOT reject a change solely because a new function appears near the bottom of the file.\n\n` +
+                        `Check each of the following and reject ONLY if you find a real semantic defect:\n` +
+                        `1. Every variable read in the changed lines that is not locally assigned is passed as a parameter or available in scope\n` +
+                        `2. Every variable assigned in the changed lines and used afterward is still defined\n` +
+                        `3. No parameter is assigned before it is first read in the called function\n` +
+                        `4. Control flow is preserved: if the original block ENDED with a \`return\`, the call site propagates that value; and if the block contained an EARLY \`return\`/\`break\`/\`continue\`/\`throw\` that exited an enclosing scope, the helper reproduces that control flow internally and each call site propagates it (e.g. \`const r = helper(...); if (r === null) return null;\`)\n` +
+                        `5. Only the lines described in the description were modified, plus the new helper function definition — all other original lines must be identical between the two files\n` +
+                        `6. The replacement preserves the original indentation of the changed lines\n` +
+                        `Use the review tool to answer.`,
+                },
+            ];
         const tool: ToolDefinition = {
             type: "function",
             function: {
@@ -575,6 +609,47 @@ export class MoonshotClient implements LLMClient {
             feedback: string;
         }>(messages, tool, "review change");
         return { accepted: result.accepted, feedback: result.feedback };
+    }
+
+    /**
+     * Build the structured extraction-review prompt. The reviewer receives the
+     * new helper and each call site (original vs. replacement, with location) as
+     * labeled inputs, plus the full file AFTER the change for scope/placement
+     * context. This avoids forcing the model to mentally diff two whole files,
+     * which produced both false accepts (a `const` reassignment build-breaker)
+     * and false rejects (invented hoisting bugs) under the two-file prompt.
+     */
+    private buildExtractionReviewMessages(
+        proposedSource: string,
+        description: string,
+        entities: ReviewEntities,
+    ): ChatMessage[] {
+        const callSitesText = entities.callSites
+            .map((cs, i) =>
+                `--- Site ${i + 1}: ${cs.location} ---\n` +
+                `ORIGINAL block:\n\`\`\`typescript\n${cs.originalBlock.trim()}\n\`\`\`\n` +
+                `REPLACEMENT call site:\n\`\`\`typescript\n${cs.replacement.trim()}\n\`\`\``
+            )
+            .join("\n\n");
+
+        return [{
+            role: "user",
+            content: `Review a proposed duplicate-code extraction.\n\n` +
+                `Description: ${description}\n\n` +
+                `NEW HELPER (added to the file):\n\`\`\`typescript\n${entities.helperFunction.trim()}\n\`\`\`\n\n` +
+                `CALL-SITE REPLACEMENTS — for each site below, the ORIGINAL duplicate block was replaced by the REPLACEMENT shown. Verify that each replacement, together with the helper above, preserves the original block's behavior.\n\n` +
+                `${callSitesText}\n\n` +
+                `FULL FILE AFTER THE CHANGE (context only — use for scope, visibility, and to see the helper's placement):\n\`\`\`typescript\n${proposedSource.trim()}\n\`\`\`\n\n` +
+                `Notes:\n` +
+                `- The helper is a top-level \`function\` declaration (or an instance method) placed at the END of the file or inside its class. A top-level \`function\` placed AFTER its callers is NOT a defect: function declarations are hoisted in JS/TS, so the helper is reachable at runtime. Do NOT reject on placement or hoisting alone.\n` +
+                `- Judge the change by comparing each ORIGINAL block to its REPLACEMENT plus the helper — NOT by diffing the whole file. The FULL FILE is for context only.\n\n` +
+                `Accept ONLY if all of the following hold; reject if any fail:\n` +
+                `1. PARAMETER WIRING: at each call site, the arguments passed to the helper match — in identity and order — the values the ORIGINAL block read from its enclosing scope, and every value the helper reads is a parameter (no hidden dependency on outer-scope names).\n` +
+                `2. RETURN / CONTROL FLOW: if the ORIGINAL block ended with a \`return X\`, the REPLACEMENT ends with \`return helper(...)\` (or otherwise propagates the value). If the ORIGINAL block had an EARLY \`return\`/\`break\`/\`continue\`/\`throw\` that escaped an enclosing scope, the helper reproduces it internally AND the call site propagates it (e.g. \`const r = helper(...); if (r === null) return null;\`).\n` +
+                `3. NO BROKEN SHARED MUTABLE STATE: the helper must not rely on, or silently drop, mutable state shared with code OUTSIDE the block. If the ORIGINAL block declared or mutated a local (counter, accumulator, flag) that is read or mutated by OTHER code — e.g. a variable captured by a closure/callback defined elsewhere in the same function — then returning that value by value from the helper BREAKS the sharing (the outer code would mutate a copy). Reject.\n` +
+                `4. ASSIGNMENTS USED AFTERWARD: any variable the ORIGINAL block assigned and that is read later in the enclosing scope is still produced (returned by the helper and assigned at the call site).\n` +
+                `Use the review tool to answer.`,
+        }];
     }
 
     async verifyDuplicateMatch(

@@ -4,7 +4,7 @@ import * as babelParser from "@babel/parser";
 import type { ChangedRange } from "../diff.ts";
 import type { Config } from "../config.ts";
 import type { Refactor, RefactorContext, RefactorResult } from "../engine.ts";
-import type { LLMClient } from "../llm.ts";
+import type { LLMClient, ReviewEntities } from "../llm.ts";
 import type { TypeChecker, TypeDiagnostic } from "../type_checker.ts";
 import { collectFileLevelBindings, JS_TS_KEYWORDS } from "./function_splitter.ts";
 
@@ -755,10 +755,25 @@ export function createDuplicateExtractor(
                     }
                 }
 
+                // Structured review input: the new helper plus each call site
+                // (original block, replacement, location) as labeled entities.
+                // This focuses review on per-site behavioral preservation
+                // instead of making the model diff two whole files.
+                const reviewEntities: ReviewEntities = {
+                    helperFunction: extraction.helperFunction,
+                    callSites: remaining.map((seq, i) => ({
+                        location:
+                            `lines ${seq.startLine}-${seq.endLine} (${seq.scope})`,
+                        originalBlock: seq.source,
+                        replacement: callSites[i],
+                    })),
+                };
+
                 const reviewResult = await llm.reviewChange(
                     currentSource,
                     proposedSource,
                     `extracted duplicate code into ${extraction.helperName} (replacing ${remaining.length} blocks)`,
+                    reviewEntities,
                 );
                 if (!reviewResult.accepted) {
                     log?.(

@@ -1,5 +1,6 @@
 import { assert, assertEquals, assertRejects } from "@std/assert";
 import { createLLMClient, LLMStats, MoonshotClient } from "../src/llm.ts";
+import type { ReviewEntities } from "../src/llm.ts";
 
 function mockFetch(response: string): typeof fetch {
     return (() =>
@@ -1457,6 +1458,95 @@ Deno.test("MoonshotClient reviewChange prompt documents hoisting and early-retur
     assert(
         content.includes("END of the file"),
         "prompt should clarify that appending a helper at file end is valid",
+    );
+});
+
+Deno.test("MoonshotClient reviewChange builds structured prompt when entities are passed", async () => {
+    const { fetchFn, getRequest } = captureToolCallFetch("review", {
+        accepted: true,
+        feedback: "",
+    });
+    const client = new MoonshotClient("key", "model", fetchFn);
+    const entities: ReviewEntities = {
+        helperFunction: "function buildArgs(p) { return [p]; }",
+        callSites: [
+            {
+                location: "lines 10-13 (buildCallFromMapping)",
+                originalBlock:
+                    "const args = [];\nfor (const p of ps) args.push(p);",
+                replacement: "const args = buildArgs(ps);",
+            },
+            {
+                location: "lines 50-53 (buildAssignmentCall)",
+                originalBlock:
+                    "const args = [];\nfor (const p of ps) args.push(p);",
+                replacement: "const args = buildArgs(ps);",
+            },
+        ],
+    };
+    await client.reviewChange(
+        "original-ignored",
+        "function main() { const args = buildArgs(ps); }",
+        "extracted duplicate code into buildArgs (replacing 2 blocks)",
+        entities,
+    );
+    const body = await getRequest()!.json();
+    const content = body.messages[0].content as string;
+
+    // Structured inputs are present and labeled.
+    assert(
+        content.includes("NEW HELPER"),
+        "structured prompt should label the new helper",
+    );
+    assert(
+        content.includes("function buildArgs(p) { return [p]; }"),
+        "structured prompt should include the helper source",
+    );
+    assert(
+        content.includes("CALL-SITE REPLACEMENTS"),
+        "structured prompt should label the call-site section",
+    );
+    assert(
+        content.includes("ORIGINAL block") && content.includes(
+            "REPLACEMENT call site",
+        ),
+        "structured prompt should label original vs. replacement per site",
+    );
+    assert(
+        content.includes("lines 10-13 (buildCallFromMapping)"),
+        "structured prompt should include each call-site location",
+    );
+    assert(
+        content.includes("const args = [];\nfor (const p of ps) args.push(p);"),
+        "structured prompt should include the original block text",
+    );
+    assert(
+        content.includes("FULL FILE AFTER THE CHANGE"),
+        "structured prompt should provide the post-change file as context",
+    );
+    assert(
+        !content.includes("Original file:"),
+        "structured prompt must not use the two-file diff framing",
+    );
+
+    // Extraction-specific checks are present.
+    assert(
+        content.includes("PARAMETER WIRING"),
+        "prompt should include the parameter-wiring check",
+    );
+    assert(
+        content.includes("BROKEN SHARED MUTABLE STATE"),
+        "prompt should include the shared-mutable-state check",
+    );
+    assert(
+        content.includes("ASSIGNMENTS USED AFTERWARD"),
+        "prompt should include the assignments-used-afterward check",
+    );
+
+    // Hoisting note is retained so file-end placement is not falsely flagged.
+    assert(
+        content.includes("hoisted"),
+        "structured prompt should still note function-declaration hoisting",
     );
 });
 
