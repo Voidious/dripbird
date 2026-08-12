@@ -1,5 +1,6 @@
 import { assert, assertEquals, assertRejects } from "@std/assert";
 import { createLLMClient, LLMStats, MoonshotClient } from "../src/llm.ts";
+import type { ReviewEntities } from "../src/llm.ts";
 
 function mockFetch(response: string): typeof fetch {
     return (() =>
@@ -218,6 +219,9 @@ Deno.test("createLLMClient passes stats to client", async () => {
             max_function_lines: 75,
             function_splitter_retries: 2,
             function_matcher_retries: 2,
+            duplicate_extractor_min_lines: 2,
+            duplicate_extractor_max_lines: 12,
+            duplicate_extractor_retries: 2,
             provider: "moonshot",
             model: "test-model",
             enabled_refactors: [],
@@ -305,6 +309,9 @@ Deno.test("createLLMClient returns null without API key", () => {
             max_function_lines: 75,
             function_splitter_retries: 2,
             function_matcher_retries: 2,
+            duplicate_extractor_min_lines: 2,
+            duplicate_extractor_max_lines: 12,
+            duplicate_extractor_retries: 2,
             provider: "moonshot",
             model: "kimi-k2.5",
             enabled_refactors: [],
@@ -327,6 +334,9 @@ Deno.test("createLLMClient uses env var API key", () => {
             max_function_lines: 75,
             function_splitter_retries: 2,
             function_matcher_retries: 2,
+            duplicate_extractor_min_lines: 2,
+            duplicate_extractor_max_lines: 12,
+            duplicate_extractor_retries: 2,
             provider: "moonshot",
             model: "kimi-k2.5",
             enabled_refactors: [],
@@ -352,6 +362,9 @@ Deno.test("createLLMClient uses options API key over env", () => {
             max_function_lines: 75,
             function_splitter_retries: 2,
             function_matcher_retries: 2,
+            duplicate_extractor_min_lines: 2,
+            duplicate_extractor_max_lines: 12,
+            duplicate_extractor_retries: 2,
             provider: "moonshot",
             model: "kimi-k2.5",
             enabled_refactors: [],
@@ -376,6 +389,9 @@ Deno.test("createLLMClient passes custom fetchFn", async () => {
         max_function_lines: 75,
         function_splitter_retries: 2,
         function_matcher_retries: 2,
+        duplicate_extractor_min_lines: 2,
+        duplicate_extractor_max_lines: 12,
+        duplicate_extractor_retries: 2,
         provider: "moonshot",
         model: "test-model",
         enabled_refactors: [],
@@ -1011,4 +1027,544 @@ Deno.test("MoonshotClient callWithTool retry with stats records all attempts", a
     assertEquals(stats.totalCompletionTokens, 3);
     assert(messages.some((m) => m.includes("JSON parse failed")));
     assert(messages.some((m) => m.includes("finish_reason=unknown")));
+});
+
+Deno.test("MoonshotClient verifyDuplicateMatch returns match result", async () => {
+    const client = new MoonshotClient(
+        "key",
+        "model",
+        mockToolFetch("evaluate_duplicates", {
+            is_match: true,
+            exclude_indices: [],
+            reason: "same logic",
+        }),
+    );
+    const result = await client.verifyDuplicateMatch(
+        ["const x = 1;", "const y = 1;"],
+        "full source",
+    );
+    assertEquals(result.isMatch, true);
+    assertEquals(result.excludeIndices, []);
+    assertEquals(result.reason, "same logic");
+});
+
+Deno.test("MoonshotClient verifyDuplicateMatch returns no match", async () => {
+    const client = new MoonshotClient(
+        "key",
+        "model",
+        mockToolFetch("evaluate_duplicates", {
+            is_match: false,
+            exclude_indices: [],
+            reason: "different ops",
+        }),
+    );
+    const result = await client.verifyDuplicateMatch(
+        ["const x = 1;", "const y = 2;"],
+        "source",
+    );
+    assertEquals(result.isMatch, false);
+    assertEquals(result.excludeIndices, []);
+});
+
+Deno.test("MoonshotClient verifyDuplicateMatch with exclude indices", async () => {
+    const client = new MoonshotClient(
+        "key",
+        "model",
+        mockToolFetch("evaluate_duplicates", {
+            is_match: true,
+            exclude_indices: [1],
+            reason: "block 2 differs",
+        }),
+    );
+    const result = await client.verifyDuplicateMatch(
+        ["const x = 1;", "const y = 2;", "const z = 1;"],
+        "source",
+    );
+    assertEquals(result.isMatch, true);
+    assertEquals(result.excludeIndices, [1]);
+});
+
+Deno.test("MoonshotClient verifyDuplicateMatch handles missing exclude_indices", async () => {
+    const captured: { req: Request | null } = { req: null };
+    const fetchFn = ((input: RequestInfo | URL, init?: RequestInit) => {
+        captured.req = new Request(input as URL, init);
+        return Promise.resolve(
+            new Response(
+                JSON.stringify({
+                    choices: [{
+                        message: {
+                            content: null,
+                            tool_calls: [{
+                                function: {
+                                    name: "evaluate_duplicates",
+                                    arguments: JSON.stringify({
+                                        is_match: true,
+                                        reason: "ok",
+                                    }),
+                                },
+                            }],
+                        },
+                    }],
+                    usage: {
+                        prompt_tokens: 10,
+                        completion_tokens: 5,
+                        total_tokens: 15,
+                    },
+                }),
+            ),
+        );
+    }) as unknown as typeof fetch;
+    const client = new MoonshotClient("key", "model", fetchFn);
+    const result = await client.verifyDuplicateMatch(["code1", "code2"], "src");
+    assertEquals(result.isMatch, true);
+    assertEquals(result.excludeIndices, []);
+    assertEquals(result.reason, "ok");
+});
+
+Deno.test("MoonshotClient verifyDuplicateMatch truncates long source", async () => {
+    const stats = new LLMStats();
+    const fetchFn = mockToolFetch("evaluate_duplicates", {
+        is_match: false,
+        exclude_indices: [],
+        reason: "",
+    });
+    const client = new MoonshotClient("key", "model", fetchFn, stats);
+    const longSource = "x".repeat(5000);
+    const result = await client.verifyDuplicateMatch(
+        ["code1", "code2"],
+        longSource,
+    );
+    assertEquals(result.isMatch, false);
+    assertEquals(stats.callCount, 1);
+});
+
+Deno.test("MoonshotClient generateExtraction returns extraction", async () => {
+    const client = new MoonshotClient(
+        "key",
+        "model",
+        mockToolFetch("generate_extraction", {
+            helper_name: "processItems",
+            helper_function: "function processItems(a, b) { return a + b; }\n",
+            call_sites: ["    processItems(x, y);\n", "    processItems(m, n);\n"],
+        }),
+    );
+    const result = await client.generateExtraction(
+        ["const z = x + y;", "const w = m + n;"],
+        "source",
+        ["forbidden1"],
+    );
+    assertEquals(result.helperName, "processItems");
+    assertEquals(
+        result.helperFunction,
+        "function processItems(a, b) { return a + b; }\n",
+    );
+    assertEquals(result.callSites.length, 2);
+});
+
+Deno.test("MoonshotClient generateExtraction includes previousFeedback in prompt", async () => {
+    const captured: { req: Request | null } = { req: null };
+    const fetchFn = ((input: RequestInfo | URL, init?: RequestInit) => {
+        captured.req = new Request(input as URL, init);
+        return Promise.resolve(
+            new Response(
+                JSON.stringify({
+                    choices: [{
+                        message: {
+                            content: null,
+                            tool_calls: [{
+                                function: {
+                                    name: "generate_extraction",
+                                    arguments: JSON.stringify({
+                                        helper_name: "helper",
+                                        helper_function: "function helper() {}\n",
+                                        call_sites: ["    helper();\n"],
+                                    }),
+                                },
+                            }],
+                        },
+                    }],
+                    usage: {
+                        prompt_tokens: 10,
+                        completion_tokens: 5,
+                        total_tokens: 15,
+                    },
+                }),
+            ),
+        );
+    }) as unknown as typeof fetch;
+    const client = new MoonshotClient("key", "model", fetchFn);
+    await client.generateExtraction(
+        ["code"],
+        "source",
+        [],
+        "wrong indentation",
+    );
+    const body = await captured.req!.json();
+    assert(body.messages[0].content.includes("previous attempt was rejected"));
+    assert(body.messages[0].content.includes("wrong indentation"));
+});
+
+Deno.test("MoonshotClient generateExtraction omits feedback when none provided", async () => {
+    const captured: { req: Request | null } = { req: null };
+    const fetchFn = ((input: RequestInfo | URL, init?: RequestInit) => {
+        captured.req = new Request(input as URL, init);
+        return Promise.resolve(
+            new Response(
+                JSON.stringify({
+                    choices: [{
+                        message: {
+                            content: null,
+                            tool_calls: [{
+                                function: {
+                                    name: "generate_extraction",
+                                    arguments: JSON.stringify({
+                                        helper_name: "helper",
+                                        helper_function: "function helper() {}\n",
+                                        call_sites: ["    helper();\n"],
+                                    }),
+                                },
+                            }],
+                        },
+                    }],
+                    usage: {
+                        prompt_tokens: 10,
+                        completion_tokens: 5,
+                        total_tokens: 15,
+                    },
+                }),
+            ),
+        );
+    }) as unknown as typeof fetch;
+    const client = new MoonshotClient("key", "model", fetchFn);
+    await client.generateExtraction(["code"], "source", []);
+    const body = await captured.req!.json();
+    assert(!body.messages[0].content.includes("previous attempt was rejected"));
+});
+
+Deno.test("MoonshotClient generateExtraction includes forbidden names", async () => {
+    const captured: { req: Request | null } = { req: null };
+    const fetchFn = ((input: RequestInfo | URL, init?: RequestInit) => {
+        captured.req = new Request(input as URL, init);
+        return Promise.resolve(
+            new Response(
+                JSON.stringify({
+                    choices: [{
+                        message: {
+                            content: null,
+                            tool_calls: [{
+                                function: {
+                                    name: "generate_extraction",
+                                    arguments: JSON.stringify({
+                                        helper_name: "helper",
+                                        helper_function: "function helper() {}\n",
+                                        call_sites: ["    helper();\n"],
+                                    }),
+                                },
+                            }],
+                        },
+                    }],
+                    usage: {
+                        prompt_tokens: 10,
+                        completion_tokens: 5,
+                        total_tokens: 15,
+                    },
+                }),
+            ),
+        );
+    }) as unknown as typeof fetch;
+    const client = new MoonshotClient("key", "model", fetchFn);
+    await client.generateExtraction(["code"], "source", ["foo", "bar"]);
+    const body = await captured.req!.json();
+    assert(body.messages[0].content.includes("Forbidden names"));
+    assert(body.messages[0].content.includes("foo"));
+    assert(body.messages[0].content.includes("bar"));
+});
+
+Deno.test("MoonshotClient generateExtraction omits forbidden names when empty", async () => {
+    const captured: { req: Request | null } = { req: null };
+    const fetchFn = ((input: RequestInfo | URL, init?: RequestInit) => {
+        captured.req = new Request(input as URL, init);
+        return Promise.resolve(
+            new Response(
+                JSON.stringify({
+                    choices: [{
+                        message: {
+                            content: null,
+                            tool_calls: [{
+                                function: {
+                                    name: "generate_extraction",
+                                    arguments: JSON.stringify({
+                                        helper_name: "helper",
+                                        helper_function: "function helper() {}\n",
+                                        call_sites: ["    helper();\n"],
+                                    }),
+                                },
+                            }],
+                        },
+                    }],
+                    usage: {
+                        prompt_tokens: 10,
+                        completion_tokens: 5,
+                        total_tokens: 15,
+                    },
+                }),
+            ),
+        );
+    }) as unknown as typeof fetch;
+    const client = new MoonshotClient("key", "model", fetchFn);
+    await client.generateExtraction(["code"], "source", []);
+    const body = await captured.req!.json();
+    assert(!body.messages[0].content.includes("Forbidden names"));
+});
+
+Deno.test("MoonshotClient generateExtraction truncates long source", async () => {
+    const stats = new LLMStats();
+    const fetchFn = mockToolFetch("generate_extraction", {
+        helper_name: "h",
+        helper_function: "function h() {}\n",
+        call_sites: ["    h();\n"],
+    });
+    const client = new MoonshotClient("key", "model", fetchFn, stats);
+    const longSource = "x".repeat(5000);
+    const result = await client.generateExtraction(
+        ["code"],
+        longSource,
+        [],
+    );
+    assertEquals(result.helperName, "h");
+    assertEquals(stats.callCount, 1);
+});
+
+function captureRequestFetch(): {
+    fetchFn: typeof fetch;
+    getRequest: () => Request | null;
+} {
+    const captured: { req: Request | null } = { req: null };
+    const fetchFn = ((input: RequestInfo | URL, init?: RequestInit) => {
+        captured.req = new Request(input as URL, init);
+        return Promise.resolve(
+            new Response(
+                JSON.stringify({
+                    choices: [{
+                        message: {
+                            content: null,
+                            tool_calls: [{
+                                function: {
+                                    name: "generate_extraction",
+                                    arguments: JSON.stringify({
+                                        helper_name: "helper",
+                                        helper_function: "helper() {}\n",
+                                        call_sites: ["    this.helper();\n"],
+                                    }),
+                                },
+                            }],
+                        },
+                    }],
+                    usage: {
+                        prompt_tokens: 10,
+                        completion_tokens: 5,
+                        total_tokens: 15,
+                    },
+                }),
+            ),
+        );
+    }) as unknown as typeof fetch;
+    return { fetchFn, getRequest: () => captured.req };
+}
+
+Deno.test("MoonshotClient generateExtraction uses instance-method prompt with context", async () => {
+    const { fetchFn, getRequest } = captureRequestFetch();
+    const client = new MoonshotClient("key", "model", fetchFn);
+    await client.generateExtraction(
+        ["this.x = 1;"],
+        "source",
+        [],
+        undefined,
+        { kind: "instanceMethod", className: "Logger" },
+    );
+    const body = await getRequest()!.json();
+    const content = body.messages[0].content as string;
+    assert(content.includes("instance"), "prompt should mention instance method");
+    assert(content.includes("Logger"), "prompt should mention the class name");
+    assert(
+        content.includes("this.helperName"),
+        "prompt should require this. call sites",
+    );
+    assert(content.includes("method syntax"));
+    assert(!content.includes("top-level function declaration"));
+});
+
+Deno.test("MoonshotClient generateExtraction uses top-level prompt without context", async () => {
+    const { fetchFn, getRequest } = captureRequestFetch();
+    const client = new MoonshotClient("key", "model", fetchFn);
+    await client.generateExtraction(["x = 1;"], "source", []);
+    const body = await getRequest()!.json();
+    const content = body.messages[0].content as string;
+    assert(content.includes("top-level function declaration"));
+    assert(!content.includes("instance"));
+    assert(!content.includes("method syntax"));
+});
+
+function captureToolCallFetch(
+    toolName: string,
+    toolArgs: Record<string, unknown>,
+): { fetchFn: typeof fetch; getRequest: () => Request | null } {
+    const captured: { req: Request | null } = { req: null };
+    const fetchFn = ((input: RequestInfo | URL, init?: RequestInit) => {
+        captured.req = new Request(input as URL, init);
+        return Promise.resolve(
+            new Response(
+                JSON.stringify({
+                    choices: [{
+                        message: {
+                            content: null,
+                            tool_calls: [{
+                                function: {
+                                    name: toolName,
+                                    arguments: JSON.stringify(toolArgs),
+                                },
+                            }],
+                        },
+                    }],
+                    usage: {
+                        prompt_tokens: 10,
+                        completion_tokens: 5,
+                        total_tokens: 15,
+                    },
+                }),
+            ),
+        );
+    }) as unknown as typeof fetch;
+    return { fetchFn, getRequest: () => captured.req };
+}
+
+Deno.test("MoonshotClient reviewChange prompt documents hoisting and early-return propagation", async () => {
+    const { fetchFn, getRequest } = captureToolCallFetch("review", {
+        accepted: true,
+        feedback: "",
+    });
+    const client = new MoonshotClient("key", "model", fetchFn);
+    await client.reviewChange("original", "proposed", "extract duplicate");
+    const body = await getRequest()!.json();
+    const content = body.messages[0].content as string;
+    assert(
+        content.includes("hoisted"),
+        "prompt should note top-level function declarations are hoisted",
+    );
+    assert(
+        content.includes("EARLY"),
+        "prompt should cover early return/break/continue propagation",
+    );
+    assert(
+        content.includes("END of the file"),
+        "prompt should clarify that appending a helper at file end is valid",
+    );
+});
+
+Deno.test("MoonshotClient reviewChange builds structured prompt when entities are passed", async () => {
+    const { fetchFn, getRequest } = captureToolCallFetch("review", {
+        accepted: true,
+        feedback: "",
+    });
+    const client = new MoonshotClient("key", "model", fetchFn);
+    const entities: ReviewEntities = {
+        helperFunction: "function buildArgs(p) { return [p]; }",
+        callSites: [
+            {
+                location: "lines 10-13 (buildCallFromMapping)",
+                originalBlock:
+                    "const args = [];\nfor (const p of ps) args.push(p);",
+                replacement: "const args = buildArgs(ps);",
+            },
+            {
+                location: "lines 50-53 (buildAssignmentCall)",
+                originalBlock:
+                    "const args = [];\nfor (const p of ps) args.push(p);",
+                replacement: "const args = buildArgs(ps);",
+            },
+        ],
+    };
+    await client.reviewChange(
+        "original-ignored",
+        "function main() { const args = buildArgs(ps); }",
+        "extracted duplicate code into buildArgs (replacing 2 blocks)",
+        entities,
+    );
+    const body = await getRequest()!.json();
+    const content = body.messages[0].content as string;
+
+    // Structured inputs are present and labeled.
+    assert(
+        content.includes("NEW HELPER"),
+        "structured prompt should label the new helper",
+    );
+    assert(
+        content.includes("function buildArgs(p) { return [p]; }"),
+        "structured prompt should include the helper source",
+    );
+    assert(
+        content.includes("CALL-SITE REPLACEMENTS"),
+        "structured prompt should label the call-site section",
+    );
+    assert(
+        content.includes("ORIGINAL block") && content.includes(
+            "REPLACEMENT call site",
+        ),
+        "structured prompt should label original vs. replacement per site",
+    );
+    assert(
+        content.includes("lines 10-13 (buildCallFromMapping)"),
+        "structured prompt should include each call-site location",
+    );
+    assert(
+        content.includes("const args = [];\nfor (const p of ps) args.push(p);"),
+        "structured prompt should include the original block text",
+    );
+    assert(
+        content.includes("FULL FILE AFTER THE CHANGE"),
+        "structured prompt should provide the post-change file as context",
+    );
+    assert(
+        !content.includes("Original file:"),
+        "structured prompt must not use the two-file diff framing",
+    );
+
+    // Extraction-specific checks are present.
+    assert(
+        content.includes("PARAMETER WIRING"),
+        "prompt should include the parameter-wiring check",
+    );
+    assert(
+        content.includes("BROKEN SHARED MUTABLE STATE"),
+        "prompt should include the shared-mutable-state check",
+    );
+    assert(
+        content.includes("ASSIGNMENTS USED AFTERWARD"),
+        "prompt should include the assignments-used-afterward check",
+    );
+
+    // Hoisting note is retained so file-end placement is not falsely flagged.
+    assert(
+        content.includes("hoisted"),
+        "structured prompt should still note function-declaration hoisting",
+    );
+});
+
+Deno.test("MoonshotClient verifyDuplicateMatch prompt rejects mutable shared state", async () => {
+    const { fetchFn, getRequest } = captureToolCallFetch(
+        "evaluate_duplicates",
+        { is_match: false, exclude_indices: [], reason: "mutable state" },
+    );
+    const client = new MoonshotClient("key", "model", fetchFn);
+    await client.verifyDuplicateMatch(["let c = 0;"], "src");
+    const body = await getRequest()!.json();
+    const content = body.messages[0].content as string;
+    assert(
+        content.includes("SELF-CONTAINED"),
+        "prompt should require blocks to be self-contained",
+    );
+    assert(
+        content.includes("mutable local state"),
+        "prompt should flag mutable local state mutated outside the block",
+    );
 });

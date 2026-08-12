@@ -244,6 +244,155 @@ Deno.test("TypeCheckerImpl handles createProgram throwing", async () => {
     assertEquals(checker.getTypeAtPosition(1, 6), null);
 });
 
+Deno.test("TypeCheckerImpl getSemanticErrors returns [] before init", () => {
+    const checker = new TypeCheckerImpl();
+    assertEquals(checker.getSemanticErrors(), []);
+    checker.dispose();
+});
+
+Deno.test("TypeCheckerImpl getSemanticErrors returns [] after dispose", async () => {
+    const checker = new TypeCheckerImpl();
+    await checker.initForSource("const x: number = 1;\n");
+    checker.dispose();
+    assertEquals(checker.getSemanticErrors(), []);
+});
+
+Deno.test("TypeCheckerImpl getSemanticErrors returns [] on load failure", async () => {
+    const checker = new TypeCheckerImpl(() => {
+        throw new Error("cannot load");
+    });
+    await checker.initForSource("const x = 1;");
+    assertEquals(checker.getSemanticErrors(), []);
+});
+
+Deno.test("TypeCheckerImpl getSemanticErrors returns [] when program creation fails", async () => {
+    const fakeTs = {
+        ScriptTarget: { Latest: 99 },
+        ModuleKind: { ESNext: 99 },
+        ModuleResolutionKind: { NodeJs: 2 },
+        createCompilerHost: () => ({ getSourceFile: () => null }),
+        createSourceFile: () => ({}),
+        createProgram: () => {
+            throw new Error("boom");
+        },
+        getPositionOfLineAndCharacter: () => 0,
+        forEachChild: () => {},
+    };
+    const checker = new TypeCheckerImpl(() => Promise.resolve(fakeTs));
+    await checker.initForSource("const x = 1;\n");
+    assertEquals(checker.getSemanticErrors(), []);
+});
+
+Deno.test("TypeCheckerImpl getSemanticErrors returns [] when sourceFile is unavailable", async () => {
+    const fakeTs = {
+        ScriptTarget: { Latest: 99 },
+        ModuleKind: { ESNext: 99 },
+        ModuleResolutionKind: { NodeJs: 2 },
+        createCompilerHost: () => ({ getSourceFile: () => null }),
+        createSourceFile: () => ({}),
+        createProgram: () => ({
+            getTypeChecker: () => ({
+                getTypeAtLocation: () => null,
+                typeToString: () => "any",
+            }),
+            getSourceFile: () => undefined,
+        }),
+        getPositionOfLineAndCharacter: () => 0,
+        forEachChild: () => {},
+    };
+    const checker = new TypeCheckerImpl(() => Promise.resolve(fakeTs));
+    await checker.initForSource("const x = 1;\n");
+    assertEquals(checker.getSemanticErrors(), []);
+});
+
+Deno.test("TypeCheckerImpl getSemanticErrors filters diagnostics to the target file", async () => {
+    const targetPath = "/__dripbird_virtual__.ts";
+    const targetFile = {
+        fileName: targetPath,
+        getLineAndCharacterOfPosition: () => ({ line: 0, character: 0 }),
+    };
+    const otherFile = {
+        fileName: "/other.ts",
+        getLineAndCharacterOfPosition: () => ({ line: 0, character: 0 }),
+    };
+    const fakeTs = {
+        ScriptTarget: { Latest: 99 },
+        ModuleKind: { ESNext: 99 },
+        ModuleResolutionKind: { NodeJs: 2 },
+        createCompilerHost: () => ({ getSourceFile: () => null }),
+        createSourceFile: () => targetFile,
+        createProgram: () => ({
+            getTypeChecker: () => ({
+                getTypeAtLocation: () => null,
+                typeToString: () => "any",
+            }),
+            getSourceFile: () => targetFile,
+        }),
+        getPreEmitDiagnostics: () => [
+            { file: null, code: 1, messageText: "global", start: 0 },
+            { file: otherFile, code: 2, messageText: "other", start: 0 },
+            { file: targetFile, code: 2588, messageText: "const assign", start: 5 },
+            {
+                file: targetFile,
+                code: 7006,
+                messageText: "implicit any",
+                start: undefined,
+            },
+        ],
+        flattenDiagnosticMessageText: (m: unknown) => String(m),
+        getPositionOfLineAndCharacter: () => 0,
+        forEachChild: () => {},
+    };
+    const checker = new TypeCheckerImpl(() => Promise.resolve(fakeTs));
+    await checker.initForSource("const x = 1;\n");
+    const errors = checker.getSemanticErrors();
+    assertEquals(errors.length, 2);
+    assertEquals(errors[0].code, 2588);
+    assertEquals(errors[0].message, "const assign");
+    assertEquals(errors[0].line, 1);
+    assertEquals(errors[0].column, 1);
+    assertEquals(errors[1].code, 7006);
+});
+
+Deno.test("TypeCheckerImpl getSemanticErrors swallows a diagnostics error", async () => {
+    const fakeTs = {
+        ScriptTarget: { Latest: 99 },
+        ModuleKind: { ESNext: 99 },
+        ModuleResolutionKind: { NodeJs: 2 },
+        createCompilerHost: () => ({ getSourceFile: () => null }),
+        createSourceFile: () => ({}),
+        createProgram: () => ({
+            getTypeChecker: () => ({
+                getTypeAtLocation: () => null,
+                typeToString: () => "any",
+            }),
+            getSourceFile: () => ({ fileName: "/__dripbird_virtual__.ts" }),
+        }),
+        getPreEmitDiagnostics: () => {
+            throw new Error("diag failed");
+        },
+        flattenDiagnosticMessageText: () => "",
+        getPositionOfLineAndCharacter: () => 0,
+        forEachChild: () => {},
+    };
+    const checker = new TypeCheckerImpl(() => Promise.resolve(fakeTs));
+    await checker.initForSource("const x = 1;\n");
+    assertEquals(checker.getSemanticErrors(), []);
+});
+
+Deno.test("TypeCheckerImpl getSemanticErrors flags const reassignment", async () => {
+    const checker = new TypeCheckerImpl();
+    const src = "function f() {\n    const counter = 0;\n    counter++;\n}\n";
+    await checker.initForSource(src);
+    const errors = checker.getSemanticErrors();
+    assert(errors.length > 0);
+    assert(
+        errors.some((e) => e.code === 2588),
+        "expected a TS2588 const-assignment diagnostic",
+    );
+    checker.dispose();
+});
+
 Deno.test("parseTypeString produces number type annotation", () => {
     const annotation = parseTypeString("number");
     assertEquals(annotation.type, "TSTypeAnnotation");

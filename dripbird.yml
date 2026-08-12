@@ -10,6 +10,15 @@ function_splitter_retries: 2
 # retry count for function matcher edits that fail LLM verification
 function_matcher_retries: 2
 
+# minimum lines a code block must span to be considered for duplicate extraction
+duplicate_extractor_min_lines: 2
+
+# maximum lines a code block can span to be considered for duplicate extraction
+duplicate_extractor_max_lines: 12
+
+# retry count for duplicate extractor edits that fail verification
+duplicate_extractor_retries: 2
+
 # LLM provider (currently only "moonshot")
 provider: moonshot
 
@@ -17,7 +26,7 @@ provider: moonshot
 model: kimi-k2.5
 
 # only run these refactors (empty = all enabled)
-# available: if_not_else, function_splitter, function_matcher
+# available: if_not_else, function_splitter, function_matcher, duplicate_extractor
 enabled_refactors: []
 
 # exclude these refactors (empty = none disabled)

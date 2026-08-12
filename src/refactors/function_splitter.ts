@@ -514,7 +514,7 @@ export function getTailCode(
     return source.split("\n").slice(startLine - 1, endLine).join("\n");
 }
 
-const JS_TS_KEYWORDS = new Set([
+export const JS_TS_KEYWORDS = new Set([
     "abstract",
     "any",
     "as",

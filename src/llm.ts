@@ -10,6 +10,49 @@ export interface ReviewResult {
     feedback: string;
 }
 
+/**
+ * One call-site replacement to review as part of an extraction. Pairing the
+ * original block with its replacement (and where it lives) lets the reviewer
+ * judge behavioral preservation per-site instead of diffing two whole files.
+ */
+export interface ReviewCallSite {
+    /** Human-readable location, e.g. "lines 603-608 (buildCallFromMapping)". */
+    location: string;
+    /** The duplicate block that was replaced. */
+    originalBlock: string;
+    /** The call-site source that replaced it. */
+    replacement: string;
+}
+
+/**
+ * Structured change description for an extraction review. When supplied to
+ * `reviewChange`, the reviewer receives the new helper plus each call site
+ * (original vs. replacement) as labeled inputs rather than two whole files.
+ */
+export interface ReviewEntities {
+    /** The new helper source (function declaration or instance method). */
+    helperFunction: string;
+    /** Per-site original block + replacement + location. */
+    callSites: ReviewCallSite[];
+}
+
+export interface DuplicateVerifyResult {
+    isMatch: boolean;
+    excludeIndices: number[];
+    reason: string;
+}
+
+export interface ExtractionResult {
+    helperName: string;
+    helperFunction: string;
+    callSites: string[];
+}
+
+export interface ExtractionContext {
+    kind: "instanceMethod";
+    className: string;
+}
+
 export interface LLMClient {
     nameFunction(
         context: string,
@@ -35,7 +78,21 @@ export interface LLMClient {
         originalSource: string,
         proposedSource: string,
         description: string,
+        entities?: ReviewEntities,
     ): Promise<ReviewResult>;
+
+    verifyDuplicateMatch(
+        codeBlocks: string[],
+        fileSource: string,
+    ): Promise<DuplicateVerifyResult>;
+
+    generateExtraction(
+        codeBlocks: string[],
+        fileSource: string,
+        forbiddenNames: string[],
+        previousFeedback?: string,
+        context?: ExtractionContext,
+    ): Promise<ExtractionResult>;
 }
 
 export interface LLMOptions {
@@ -498,24 +555,32 @@ export class MoonshotClient implements LLMClient {
         originalSource: string,
         proposedSource: string,
         description: string,
+        entities?: ReviewEntities,
     ): Promise<ReviewResult> {
-        const messages: ChatMessage[] = [
-            {
-                role: "user",
-                content: `Review this proposed code change.\n\n` +
-                    `Description: ${description}\n\n` +
-                    `Original file:\n\`\`\`typescript\n${originalSource.trim()}\n\`\`\`\n\n` +
-                    `Modified file:\n\`\`\`typescript\n${proposedSource.trim()}\n\`\`\`\n\n` +
-                    `Both are complete files. Only the lines described in the description should differ between them. Check each of the following:\n` +
-                    `1. Every variable read in the changed lines that is not locally assigned is passed as a parameter or available in scope\n` +
-                    `2. Every variable assigned in the changed lines and used afterward is still defined\n` +
-                    `3. No parameter is assigned before it is first read in the called function\n` +
-                    `4. If the changed lines originally ended with a return, the replacement also propagates that return value\n` +
-                    `5. Only the lines described in the description were modified — all other lines must be identical between the two files\n` +
-                    `6. The replacement preserves the original indentation of the changed lines\n` +
-                    `Use the review tool to answer.`,
-            },
-        ];
+        const messages: ChatMessage[] = entities
+            ? this.buildExtractionReviewMessages(
+                proposedSource,
+                description,
+                entities,
+            )
+            : [
+                {
+                    role: "user",
+                    content: `Review this proposed code change.\n\n` +
+                        `Description: ${description}\n\n` +
+                        `Original file:\n\`\`\`typescript\n${originalSource.trim()}\n\`\`\`\n\n` +
+                        `Modified file:\n\`\`\`typescript\n${proposedSource.trim()}\n\`\`\`\n\n` +
+                        `Both are complete files. The change may append a new helper function at the END of the file or after the code that calls it — this is expected and is NOT a defect: top-level \`function\` declarations are hoisted in JavaScript/TypeScript, so a helper defined after its callers is reachable at runtime. Do NOT reject a change solely because a new function appears near the bottom of the file.\n\n` +
+                        `Check each of the following and reject ONLY if you find a real semantic defect:\n` +
+                        `1. Every variable read in the changed lines that is not locally assigned is passed as a parameter or available in scope\n` +
+                        `2. Every variable assigned in the changed lines and used afterward is still defined\n` +
+                        `3. No parameter is assigned before it is first read in the called function\n` +
+                        `4. Control flow is preserved: if the original block ENDED with a \`return\`, the call site propagates that value; and if the block contained an EARLY \`return\`/\`break\`/\`continue\`/\`throw\` that exited an enclosing scope, the helper reproduces that control flow internally and each call site propagates it (e.g. \`const r = helper(...); if (r === null) return null;\`)\n` +
+                        `5. Only the lines described in the description were modified, plus the new helper function definition — all other original lines must be identical between the two files\n` +
+                        `6. The replacement preserves the original indentation of the changed lines\n` +
+                        `Use the review tool to answer.`,
+                },
+            ];
         const tool: ToolDefinition = {
             type: "function",
             function: {
@@ -544,6 +609,216 @@ export class MoonshotClient implements LLMClient {
             feedback: string;
         }>(messages, tool, "review change");
         return { accepted: result.accepted, feedback: result.feedback };
+    }
+
+    /**
+     * Build the structured extraction-review prompt. The reviewer receives the
+     * new helper and each call site (original vs. replacement, with location) as
+     * labeled inputs, plus the full file AFTER the change for scope/placement
+     * context. This avoids forcing the model to mentally diff two whole files,
+     * which produced both false accepts (a `const` reassignment build-breaker)
+     * and false rejects (invented hoisting bugs) under the two-file prompt.
+     */
+    private buildExtractionReviewMessages(
+        proposedSource: string,
+        description: string,
+        entities: ReviewEntities,
+    ): ChatMessage[] {
+        const callSitesText = entities.callSites
+            .map((cs, i) =>
+                `--- Site ${i + 1}: ${cs.location} ---\n` +
+                `ORIGINAL block:\n\`\`\`typescript\n${cs.originalBlock.trim()}\n\`\`\`\n` +
+                `REPLACEMENT call site:\n\`\`\`typescript\n${cs.replacement.trim()}\n\`\`\``
+            )
+            .join("\n\n");
+
+        return [{
+            role: "user",
+            content: `Review a proposed duplicate-code extraction.\n\n` +
+                `Description: ${description}\n\n` +
+                `NEW HELPER (added to the file):\n\`\`\`typescript\n${entities.helperFunction.trim()}\n\`\`\`\n\n` +
+                `CALL-SITE REPLACEMENTS — for each site below, the ORIGINAL duplicate block was replaced by the REPLACEMENT shown. Verify that each replacement, together with the helper above, preserves the original block's behavior.\n\n` +
+                `${callSitesText}\n\n` +
+                `FULL FILE AFTER THE CHANGE (context only — use for scope, visibility, and to see the helper's placement):\n\`\`\`typescript\n${proposedSource.trim()}\n\`\`\`\n\n` +
+                `Notes:\n` +
+                `- The helper is a top-level \`function\` declaration (or an instance method) placed at the END of the file or inside its class. A top-level \`function\` placed AFTER its callers is NOT a defect: function declarations are hoisted in JS/TS, so the helper is reachable at runtime. Do NOT reject on placement or hoisting alone.\n` +
+                `- Judge the change by comparing each ORIGINAL block to its REPLACEMENT plus the helper — NOT by diffing the whole file. The FULL FILE is for context only.\n\n` +
+                `Accept ONLY if all of the following hold; reject if any fail:\n` +
+                `1. PARAMETER WIRING: at each call site, the arguments passed to the helper match — in identity and order — the values the ORIGINAL block read from its enclosing scope, and every value the helper reads is a parameter (no hidden dependency on outer-scope names).\n` +
+                `2. RETURN / CONTROL FLOW: if the ORIGINAL block ended with a \`return X\`, the REPLACEMENT ends with \`return helper(...)\` (or otherwise propagates the value). If the ORIGINAL block had an EARLY \`return\`/\`break\`/\`continue\`/\`throw\` that escaped an enclosing scope, the helper reproduces it internally AND the call site propagates it (e.g. \`const r = helper(...); if (r === null) return null;\`).\n` +
+                `3. NO BROKEN SHARED MUTABLE STATE: the helper must not rely on, or silently drop, mutable state shared with code OUTSIDE the block. If the ORIGINAL block declared or mutated a local (counter, accumulator, flag) that is read or mutated by OTHER code — e.g. a variable captured by a closure/callback defined elsewhere in the same function — then returning that value by value from the helper BREAKS the sharing (the outer code would mutate a copy). Reject.\n` +
+                `4. ASSIGNMENTS USED AFTERWARD: any variable the ORIGINAL block assigned and that is read later in the enclosing scope is still produced (returned by the helper and assigned at the call site).\n` +
+                `Use the review tool to answer.`,
+        }];
+    }
+
+    async verifyDuplicateMatch(
+        codeBlocks: string[],
+        fileSource: string,
+    ): Promise<DuplicateVerifyResult> {
+        const snippet = fileSource.length > 4000
+            ? fileSource.slice(0, 4000)
+            : fileSource;
+        const blocksText = codeBlocks
+            .map((block, i) =>
+                `Block ${i + 1}:\n\`\`\`typescript\n${block.trim()}\n\`\`\``
+            )
+            .join("\n\n");
+        const messages: ChatMessage[] = [
+            {
+                role: "user",
+                content:
+                    `Several code blocks in a TypeScript/JavaScript file may perform the same operation.\n\n` +
+                    `${blocksText}\n\n` +
+                    `File source (for context):\n\`\`\`typescript\n${snippet}\n\`\`\`\n\n` +
+                    `Do these code blocks perform the same semantic operation, such that they could all be replaced by calls to a single helper function? ` +
+                    `The blocks must form a SELF-CONTAINED operation: every value they read must be a parameter, locally produced, or otherwise safely passable into a helper. If a block declares mutable local state (e.g. a counter, accumulator, or flag) that is read or mutated by code OUTSIDE the block — such as a variable closed over by a visitor/callback defined later in the same function — the blocks are NOT safely extractable (returning a primitive by value breaks the shared mutable state), so return is_match=false. ` +
+                    `If most blocks match but some don't, exclude the non-matching ones. Use the evaluate_duplicates tool.`,
+            },
+        ];
+        const tool: ToolDefinition = {
+            type: "function",
+            function: {
+                name: "evaluate_duplicates",
+                description:
+                    "Evaluate whether code blocks are semantically equivalent and identify any to exclude",
+                parameters: {
+                    type: "object",
+                    properties: {
+                        is_match: {
+                            type: "boolean",
+                            description:
+                                "True if the code blocks perform the same semantic operation",
+                        },
+                        exclude_indices: {
+                            type: "array",
+                            items: { type: "integer" },
+                            description:
+                                "0-based indices of blocks to exclude from extraction",
+                        },
+                        reason: {
+                            type: "string",
+                            description: "Explanation of the evaluation",
+                        },
+                    },
+                    required: [
+                        "is_match",
+                        "exclude_indices",
+                        "reason",
+                    ],
+                },
+            },
+        };
+        const result = await this.callWithTool<{
+            is_match: boolean;
+            exclude_indices: number[];
+            reason: string;
+        }>(messages, tool, "verify duplicate match");
+        return {
+            isMatch: result.is_match,
+            excludeIndices: result.exclude_indices ?? [],
+            reason: result.reason,
+        };
+    }
+
+    async generateExtraction(
+        codeBlocks: string[],
+        fileSource: string,
+        forbiddenNames: string[],
+        previousFeedback?: string,
+        context?: ExtractionContext,
+    ): Promise<ExtractionResult> {
+        const snippet = fileSource.length > 4000
+            ? fileSource.slice(0, 4000)
+            : fileSource;
+        const feedbackSection = previousFeedback
+            ? `\n\nIMPORTANT: A previous attempt was rejected with this feedback. Fix the issue:\n${previousFeedback}`
+            : "";
+        const blocksText = codeBlocks
+            .map((block, i) =>
+                `Block ${i + 1}:\n\`\`\`typescript\n${block.trimEnd()}\n\`\`\``
+            )
+            .join("\n\n");
+        const forbiddenSection = forbiddenNames.length
+            ? `\n\nForbidden names (do NOT use these): ${forbiddenNames.join(", ")}`
+            : "";
+
+        const isInstanceMethod = context?.kind === "instanceMethod";
+        const helperRequirements = isInstanceMethod
+            ? `These blocks are inside instance methods of class \`${
+                context!.className
+            }\` and reference \`this\` (which refers to the class instance).\n` +
+                `- Generate an instance METHOD on the class, using method syntax: \`helperName(params) { ... }\`\n` +
+                `- Do NOT write a \`function\` declaration or a \`static\` method\n` +
+                `- Preserve \`this\` references inside the helper (they still refer to the instance)\n` +
+                `- Each call site must invoke the helper as \`this.helperName(args)\`\n`
+            : `- Generate a top-level function declaration (not arrow function)\n`;
+
+        const toolDescription = isInstanceMethod
+            ? "Generate an instance method and call sites for duplicate code blocks in a class"
+            : "Generate a helper function and call sites for duplicate code blocks";
+
+        const messages: ChatMessage[] = [
+            {
+                role: "user",
+                content:
+                    `Extract a common helper from these duplicate code blocks.\n\n` +
+                    `${blocksText}\n\n` +
+                    `File source (for context):\n\`\`\`typescript\n${snippet}\n\`\`\`\n\n` +
+                    `Requirements:\n` +
+                    helperRequirements +
+                    `- Choose a descriptive camelCase name\n` +
+                    `- Pass all necessary values as parameters\n` +
+                    `- If a code block ends with a return, the call site must also return\n` +
+                    `- Each call site must use the same indentation as its block above\n` +
+                    `- Output exactly ${codeBlocks.length} call sites, one per block${forbiddenSection}${feedbackSection}\n\n` +
+                    `Use the generate_extraction tool.`,
+            },
+        ];
+        const tool: ToolDefinition = {
+            type: "function",
+            function: {
+                name: "generate_extraction",
+                description: toolDescription,
+                parameters: {
+                    type: "object",
+                    properties: {
+                        helper_name: {
+                            type: "string",
+                            description:
+                                "camelCase name for the new helper function",
+                        },
+                        helper_function: {
+                            type: "string",
+                            description: isInstanceMethod
+                                ? "Complete source of the instance method (method syntax, no `function` keyword)"
+                                : "Complete source of the helper function declaration",
+                        },
+                        call_sites: {
+                            type: "array",
+                            items: { type: "string" },
+                            description:
+                                "Replacement code for each block, preserving indentation",
+                        },
+                    },
+                    required: [
+                        "helper_name",
+                        "helper_function",
+                        "call_sites",
+                    ],
+                },
+            },
+        };
+        const result = await this.callWithTool<{
+            helper_name: string;
+            helper_function: string;
+            call_sites: string[];
+        }>(messages, tool, "generate extraction");
+        return {
+            helperName: result.helper_name,
+            helperFunction: result.helper_function,
+            callSites: result.call_sites,
+        };
     }
 }
 

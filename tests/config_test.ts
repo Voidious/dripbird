@@ -16,6 +16,9 @@ function partialConfig(
         max_function_lines: 75,
         function_splitter_retries: 2,
         function_matcher_retries: 2,
+        duplicate_extractor_min_lines: 2,
+        duplicate_extractor_max_lines: 12,
+        duplicate_extractor_retries: 2,
         provider: "moonshot",
         model: "kimi-k2.5",
         enabled_refactors: opts.enabled_refactors ?? [],
@@ -32,6 +35,9 @@ Deno.test("loadConfig returns defaults with no config files", () => {
             max_function_lines: 75,
             function_splitter_retries: 2,
             function_matcher_retries: 2,
+            duplicate_extractor_min_lines: 2,
+            duplicate_extractor_max_lines: 12,
+            duplicate_extractor_retries: 2,
             provider: "moonshot",
             model: "kimi-k2.5",
             enabled_refactors: [],
@@ -233,6 +239,48 @@ Deno.test("filterRefactors filters by disabled_refactors", () => {
         partialConfig({ disabled_refactors: ["function_splitter"] }),
     );
     assertEquals(result.length, 1);
+});
+
+Deno.test("loadConfig reads duplicate_extractor_min_lines", () => {
+    const tempDir = Deno.makeTempDirSync();
+    try {
+        Deno.writeTextFileSync(
+            `${tempDir}/dripbird.yml`,
+            "duplicate_extractor_min_lines: 5\n",
+        );
+        const config = loadConfig(tempDir);
+        assertEquals(config.duplicate_extractor_min_lines, 5);
+    } finally {
+        Deno.removeSync(tempDir, { recursive: true });
+    }
+});
+
+Deno.test("loadConfig reads duplicate_extractor_max_lines", () => {
+    const tempDir = Deno.makeTempDirSync();
+    try {
+        Deno.writeTextFileSync(
+            `${tempDir}/dripbird.yml`,
+            "duplicate_extractor_max_lines: 25\n",
+        );
+        const config = loadConfig(tempDir);
+        assertEquals(config.duplicate_extractor_max_lines, 25);
+    } finally {
+        Deno.removeSync(tempDir, { recursive: true });
+    }
+});
+
+Deno.test("loadConfig reads duplicate_extractor_retries", () => {
+    const tempDir = Deno.makeTempDirSync();
+    try {
+        Deno.writeTextFileSync(
+            `${tempDir}/dripbird.yml`,
+            "duplicate_extractor_retries: 5\n",
+        );
+        const config = loadConfig(tempDir);
+        assertEquals(config.duplicate_extractor_retries, 5);
+    } finally {
+        Deno.removeSync(tempDir, { recursive: true });
+    }
 });
 
 Deno.test("filterRefactors enabled takes precedence over disabled", () => {

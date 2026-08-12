@@ -13,6 +13,9 @@ const testConfig: Config = {
     max_function_lines: 75,
     function_splitter_retries: 2,
     function_matcher_retries: 2,
+    duplicate_extractor_min_lines: 2,
+    duplicate_extractor_max_lines: 12,
+    duplicate_extractor_retries: 2,
     provider: "moonshot",
     model: "kimi-k2.5",
     enabled_refactors: [],
@@ -44,6 +47,14 @@ function mockLLM(options: {
                 accepted: true,
                 feedback: "",
             };
+        },
+        // deno-lint-ignore require-await
+        async verifyDuplicateMatch() {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateExtraction() {
+            return { helperName: "", helperFunction: "", callSites: [] };
         },
     };
 }
@@ -293,6 +304,14 @@ Deno.test("function matcher: handles multiple matches bottom-to-top", async () =
                     feedback: "parse error",
                 };
             }
+        },
+        // deno-lint-ignore require-await
+        async verifyDuplicateMatch() {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateExtraction() {
+            return { helperName: "", helperFunction: "", callSites: [] };
         },
     };
 
@@ -1564,6 +1583,14 @@ Deno.test("function matcher: retries on review rejection and succeeds on second 
             }
             return { accepted: true, feedback: "" };
         },
+        // deno-lint-ignore require-await
+        async verifyDuplicateMatch() {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateExtraction() {
+            return { helperName: "", helperFunction: "", callSites: [] };
+        },
     };
 
     const matcher = createFunctionMatcher(testConfig, llm);
@@ -1607,6 +1634,14 @@ Deno.test("function matcher: retries on parse failure then succeeds via LLM", as
         // deno-lint-ignore require-await
         async reviewChange(): Promise<ReviewResult> {
             return { accepted: true, feedback: "" };
+        },
+        // deno-lint-ignore require-await
+        async verifyDuplicateMatch() {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateExtraction() {
+            return { helperName: "", helperFunction: "", callSites: [] };
         },
     };
 
@@ -1652,6 +1687,14 @@ Deno.test("function matcher: gives up after retries exhausted", async () => {
         // deno-lint-ignore require-await
         async reviewChange(): Promise<ReviewResult> {
             return { accepted: false, feedback: "bad" };
+        },
+        // deno-lint-ignore require-await
+        async verifyDuplicateMatch() {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateExtraction() {
+            return { helperName: "", helperFunction: "", callSites: [] };
         },
     };
 
@@ -1702,6 +1745,14 @@ Deno.test("function matcher: no retry when function_matcher_retries is 0", async
         async reviewChange(): Promise<ReviewResult> {
             return { accepted: false, feedback: "bad" };
         },
+        // deno-lint-ignore require-await
+        async verifyDuplicateMatch() {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateExtraction() {
+            return { helperName: "", helperFunction: "", callSites: [] };
+        },
     };
 
     const logs: string[] = [];
@@ -1730,7 +1781,7 @@ Deno.test("function matcher: passes feedback to LLM on retry", async () => {
     ].join("\n");
 
     const feedbacks: (string | undefined)[] = [];
-    const llm: LLMClient = {
+    const _llm: LLMClient = {
         // deno-lint-ignore require-await
         async nameFunction() {
             return "mock";
@@ -1753,6 +1804,14 @@ Deno.test("function matcher: passes feedback to LLM on retry", async () => {
         // deno-lint-ignore require-await
         async reviewChange(): Promise<ReviewResult> {
             return { accepted: true, feedback: "" };
+        },
+        // deno-lint-ignore require-await
+        async verifyDuplicateMatch() {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateExtraction() {
+            return { helperName: "", helperFunction: "", callSites: [] };
         },
     };
 
@@ -1785,6 +1844,14 @@ Deno.test("function matcher: passes feedback to LLM on retry", async () => {
                 return { accepted: false, feedback: "wrong indentation" };
             }
             return { accepted: true, feedback: "" };
+        },
+        // deno-lint-ignore require-await
+        async verifyDuplicateMatch() {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateExtraction() {
+            return { helperName: "", helperFunction: "", callSites: [] };
         },
     };
 
@@ -1829,6 +1896,14 @@ Deno.test("function matcher: algo replacement uses LLM on retry after parse fail
         // deno-lint-ignore require-await
         async reviewChange(): Promise<ReviewResult> {
             return { accepted: true, feedback: "" };
+        },
+        // deno-lint-ignore require-await
+        async verifyDuplicateMatch() {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateExtraction() {
+            return { helperName: "", helperFunction: "", callSites: [] };
         },
     };
 
@@ -1878,6 +1953,14 @@ Deno.test("function matcher: algo replacement retries via LLM after review rejec
                 return { accepted: false, feedback: "should use return" };
             }
             return { accepted: true, feedback: "" };
+        },
+        // deno-lint-ignore require-await
+        async verifyDuplicateMatch() {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateExtraction() {
+            return { helperName: "", helperFunction: "", callSites: [] };
         },
     };
 

@@ -2,7 +2,7 @@ pre-commit:
     piped: true
     commands:
         fmt:
-            run: deno fmt --check {staged_files}
+            run: test -n "{staged_files}" && deno fmt --check {staged_files} || true
             glob: "*.{ts,js,md,json}"
             exclude: "samples/"
         lint:
