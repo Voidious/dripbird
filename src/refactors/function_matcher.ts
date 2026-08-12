@@ -7,7 +7,14 @@ import type { Refactor, RefactorContext, RefactorResult } from "../engine.ts";
 import type { LLMClient } from "../llm.ts";
 
 interface FunctionInfo {
+    /** Scope identifier used for self-skip and logs: `funcName` or `ClassName.methodName`. */
     name: string;
+    /** Where the function lives, which determines how it is invoked. */
+    kind: "function" | "staticMethod" | "instanceMethod";
+    /** Class name for class methods, else null. */
+    className: string | null;
+    /** Expression used to call the target: `funcName`, `ClassName.methodName`, or `this.methodName`. */
+    callName: string;
     node: any;
     bodyStatements: any[];
     bodySource: string;
@@ -25,6 +32,12 @@ interface SeqInfo {
     source: string;
     fingerprint: string;
     scope: string;
+    /** Enclosing function kind, used to gate where `this.`-qualified calls resolve. */
+    kind: "function" | "method";
+    /** For `kind === "method"`: whether the enclosing method is static. */
+    isStatic?: boolean;
+    /** For `kind === "method"`: the enclosing class name. */
+    className?: string | null;
     identifierMap: Map<string, string>;
 }
 
@@ -228,6 +241,9 @@ function collectFunctions(ast: any, sourceLines: string[]): FunctionInfo[] {
 
             functions.push({
                 name: node.id.name as string,
+                kind: "function",
+                className: null,
+                callName: node.id.name as string,
                 node,
                 bodyStatements,
                 bodySource,
@@ -247,7 +263,9 @@ function collectFunctions(ast: any, sourceLines: string[]): FunctionInfo[] {
                 this.traverse(path);
                 return;
             }
-            if (!node.static) {
+            // Getters/setters are invoked as property access, not calls, so a
+            // call-site replacement (`this.foo(...)`) would be wrong.
+            if (node.kind === "get" || node.kind === "set") {
                 this.traverse(path);
                 return;
             }
@@ -275,6 +293,13 @@ function collectFunctions(ast: any, sourceLines: string[]): FunctionInfo[] {
                 this.traverse(path);
                 return;
             }
+            const isStatic = !!node.static;
+            const fullName = `${className}.${methodName}`;
+            // An instance method is only callable via `this.` from another
+            // instance method of the same class (gated at match time). From
+            // anywhere else it cannot be reached through `this`, so external
+            // contexts are left to a later task.
+            const callName = isStatic ? fullName : `this.${methodName}`;
 
             const bodyStatements = node.body.body;
             const params = getParamNames(node);
@@ -315,7 +340,10 @@ function collectFunctions(ast: any, sourceLines: string[]): FunctionInfo[] {
             }
 
             functions.push({
-                name: `${className}.${methodName}`,
+                name: fullName,
+                kind: isStatic ? "staticMethod" : "instanceMethod",
+                className,
+                callName,
                 node,
                 bodyStatements,
                 bodySource,
@@ -347,7 +375,11 @@ function collectSequences(
 ): SeqInfo[] {
     const sequences: SeqInfo[] = [];
 
-    function processBody(bodyStmts: any[], scope: string) {
+    function processBody(
+        bodyStmts: any[],
+        scope: string,
+        ctx: Pick<SeqInfo, "kind" | "isStatic" | "className">,
+    ) {
         const valid: Array<{ stmt: any; startLine: number; endLine: number }> = [];
         for (const stmt of bodyStmts) {
             if (stmt.type === "FunctionDeclaration") continue;
@@ -380,6 +412,7 @@ function collectSequences(
                     source: seqSource,
                     fingerprint,
                     scope,
+                    ...ctx,
                     identifierMap,
                 });
             }
@@ -393,7 +426,11 @@ function collectSequences(
                 this.traverse(path);
                 return;
             }
-            processBody(node.body.body, node.id.name as string);
+            processBody(
+                node.body.body,
+                node.id.name as string,
+                { kind: "function", isStatic: false, className: null },
+            );
             this.traverse(path);
         },
         visitClassMethod(path) {
@@ -406,7 +443,11 @@ function collectSequences(
                 this.traverse(path);
                 return;
             }
-            processBody(node.body.body, `${className}.${methodName}`);
+            processBody(
+                node.body.body,
+                `${className}.${methodName}`,
+                { kind: "method", isStatic: !!node.static, className },
+            );
             this.traverse(path);
         },
         visitFunctionExpression() {
@@ -456,6 +497,20 @@ function findBodyMatches(
         for (const func of funcs) {
             if (func.name === seq.scope) continue;
 
+            // An instance-method target can only be reached via `this.`, which
+            // resolves inside another instance method of the SAME class. Free
+            // functions, static methods, and other classes can't call it that
+            // way — matching those is the "external contexts" case held for a
+            // later task, so skip them here.
+            if (
+                func.kind === "instanceMethod" &&
+                (seq.kind !== "method" ||
+                    seq.isStatic ||
+                    seq.className !== func.className)
+            ) {
+                continue;
+            }
+
             matches.push({ seq, func });
         }
     }
@@ -483,7 +538,7 @@ function findExpressionMatches(
 
     function checkStatement(
         stmt: any,
-        _scope: string,
+        ctx: Pick<SeqInfo, "kind" | "isStatic" | "className">,
     ) {
         if (!overlapsRange(stmt.loc.start.line, stmt.loc.end.line, ranges)) return;
 
@@ -517,6 +572,17 @@ function findExpressionMatches(
         const func = exprFpMap.get(norm.fingerprint);
         if (!func) return;
 
+        // Instance-method targets need a same-class instance-method call site
+        // for `this.` to resolve (same gate as body matching).
+        if (
+            func.kind === "instanceMethod" &&
+            (ctx.kind !== "method" ||
+                ctx.isStatic ||
+                ctx.className !== func.className)
+        ) {
+            return;
+        }
+
         const source = sourceLines
             .slice(stmt.loc.start.line - 1, stmt.loc.end.line)
             .join("\n");
@@ -538,7 +604,10 @@ function findExpressionMatches(
                 return;
             }
             for (const stmt of node.body.body) {
-                checkStatement(stmt, node.id.name as string);
+                checkStatement(
+                    stmt,
+                    { kind: "function", isStatic: false, className: null },
+                );
             }
             this.traverse(path);
         },
@@ -553,7 +622,11 @@ function findExpressionMatches(
                 return;
             }
             for (const stmt of node.body.body) {
-                checkStatement(stmt, `${className}.${methodName}`);
+                checkStatement(stmt, {
+                    kind: "method",
+                    isStatic: !!node.static,
+                    className,
+                });
             }
             this.traverse(path);
         },
@@ -608,7 +681,7 @@ function buildCallFromMapping(
     }
 
     const indent = getIndent(targetCode);
-    const callExpr = `${func.name}(${args.join(", ")})`;
+    const callExpr = `${func.callName}(${args.join(", ")})`;
 
     if (hasReturn) {
         return `${indent}return ${callExpr};\n`;
@@ -663,7 +736,7 @@ function buildAssignmentCall(
         args.push(reverseSeqMap.get(funcPlaceholder)!);
     }
 
-    const callExpr = `${func.name}(${args.join(", ")})`;
+    const callExpr = `${func.callName}(${args.join(", ")})`;
     if (keyword) {
         return `${indent}${keyword} ${targetName} = ${callExpr};\n`;
     }
@@ -755,9 +828,9 @@ export function createFunctionMatcher(
                 const hasReturn = lastStmt.type === "ReturnStatement" &&
                     lastStmt.argument;
                 if (hasReturn) {
-                    algoReplacement = `${indent}return ${m.func.name}();\n`;
+                    algoReplacement = `${indent}return ${m.func.callName}();\n`;
                 } else {
-                    algoReplacement = `${indent}${m.func.name}();\n`;
+                    algoReplacement = `${indent}${m.func.callName}();\n`;
                 }
             } else {
                 const stmts = m.seq.statements;
@@ -839,7 +912,7 @@ export function createFunctionMatcher(
                 } else {
                     replacement = await llm.generateCallReplacement(
                         match.codeBlock,
-                        match.func.name,
+                        match.func.callName,
                         funcSource,
                         source,
                         lastFeedback || undefined,
@@ -874,7 +947,7 @@ export function createFunctionMatcher(
                 const reviewResult = await llm.reviewChange(
                     currentSource,
                     proposedSource,
-                    `replaced code at lines ${match.startLine}-${match.endLine} with call to ${match.func.name}`,
+                    `replaced code at lines ${match.startLine}-${match.endLine} with call to ${match.func.callName}`,
                 );
                 if (!reviewResult.accepted) {
                     log?.(
@@ -897,7 +970,7 @@ export function createFunctionMatcher(
                 end: match.endLine,
             });
             descriptions.push(
-                `replaced code at lines ${match.startLine}-${match.endLine} with call to ${match.func.name}`,
+                `replaced code at lines ${match.startLine}-${match.endLine} with call to ${match.func.callName}`,
             );
         }
 
