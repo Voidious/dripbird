@@ -1313,9 +1313,10 @@ Deno.test("function matcher: static method matches another static method body", 
 });
 
 Deno.test("function matcher: instance method not matched from a free function (no this)", async () => {
-    // The instance method is now collected as a target, but `this.clean()`
-    // only resolves inside another instance method of the same class. From a
-    // free function there is no `this`, so the match is gated out.
+    // The instance method is collected as a target, but reaching it needs
+    // either `this.` (same-class instance method) or an in-scope instance
+    // reference (typed param / `new C()` before the call site). This free
+    // function has neither, so the match is gated out.
     const source = [
         "class Utils {",
         "    clean(s) {",
@@ -1516,6 +1517,177 @@ Deno.test("function matcher: getters and setters are skipped as match targets", 
     const result = await matcher(source, [{ start: 7, end: 7 }]);
     assertEquals(result.changed, false);
     assert(!result.source.includes("this.size()"));
+});
+
+Deno.test("function matcher: instance method body matched externally via `new` ref in free function", async () => {
+    // `fmt` is constructed before the duplicate window, so it's an in-scope
+    // instance reference and the call site becomes `fmt.clean(input)`.
+    const source = [
+        "class Formatter {",
+        "    clean(s) {",
+        "        const trimmed = s.trim();",
+        "        return trimmed.toLowerCase();",
+        "    }",
+        "}",
+        "",
+        "function run() {",
+        "    const fmt = new Formatter();",
+        "    const sanitized = input.trim();",
+        "    return sanitized.toLowerCase();",
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(testConfig, acceptAll);
+    const result = await matcher(source, [{ start: 8, end: 12 }]);
+    assertEquals(result.changed, true);
+    assert(
+        result.source.includes("return fmt.clean(input);"),
+        "expected a fmt.clean(input) call site",
+    );
+});
+
+Deno.test("function matcher: instance method body matched externally via typed param", async () => {
+    // `fmt: Formatter` parameter is an in-scope instance reference inside
+    // another class's method -> `fmt.clean(input)`.
+    const source = [
+        "class Formatter {",
+        "    clean(s) {",
+        "        const trimmed = s.trim();",
+        "        return trimmed.toLowerCase();",
+        "    }",
+        "}",
+        "",
+        "class Report {",
+        "    process(fmt: Formatter, input) {",
+        "        const sanitized = input.trim();",
+        "        return sanitized.toLowerCase();",
+        "    }",
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(testConfig, acceptAll);
+    const result = await matcher(source, [{ start: 9, end: 12 }]);
+    assertEquals(result.changed, true);
+    assert(
+        result.source.includes("return fmt.clean(input);"),
+        "expected a fmt.clean(input) call site",
+    );
+});
+
+Deno.test("function matcher: zero-arg instance method matched externally via `new` ref", async () => {
+    const source = [
+        "class Greeter {",
+        "    greeting() {",
+        '        return "hi";',
+        "    }",
+        "}",
+        "",
+        "function run() {",
+        "    const g = new Greeter();",
+        '    return "hi";',
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(testConfig, acceptAll);
+    const result = await matcher(source, [{ start: 8, end: 10 }]);
+    assertEquals(result.changed, true);
+    assert(
+        result.source.includes("return g.greeting();"),
+        "expected a g.greeting() call site",
+    );
+});
+
+Deno.test("function matcher: instance method expression match externally via `new` ref", async () => {
+    const source = [
+        "class Scorer {",
+        "    bonus(points) {",
+        "        return points * 2;",
+        "    }",
+        "}",
+        "",
+        "function run() {",
+        "    const s = new Scorer();",
+        "    const extra = p * 2;",
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(testConfig, acceptAll);
+    const result = await matcher(source, [{ start: 8, end: 10 }]);
+    assertEquals(result.changed, true);
+    assert(
+        result.source.includes("const extra = s.bonus(p);"),
+        "expected a const extra = s.bonus(p) call site",
+    );
+});
+
+Deno.test("function matcher: external instance ref must be declared before the call site", async () => {
+    // `new Scorer()` is declared AFTER the duplicate statement, so it is not in
+    // scope at the call site (temporal gate) and the match is skipped.
+    const source = [
+        "class Scorer {",
+        "    bonus(points) {",
+        "        return points * 2;",
+        "    }",
+        "}",
+        "",
+        "function run() {",
+        "    const extra = p * 2;",
+        "    const s = new Scorer();",
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(testConfig, acceptAll);
+    const result = await matcher(source, [{ start: 8, end: 9 }]);
+    assertEquals(result.changed, false);
+});
+
+Deno.test("function matcher: typed param of a different class is not an instance ref", async () => {
+    // `fmt: Other` does not name an instance of Formatter, so there is no
+    // reachable ref and the instance-method target is gated out.
+    const source = [
+        "class Formatter {",
+        "    clean(s) {",
+        "        const trimmed = s.trim();",
+        "        return trimmed.toLowerCase();",
+        "    }",
+        "}",
+        "",
+        "class Other {",
+        "    process(fmt: Other, input) {",
+        "        const sanitized = input.trim();",
+        "        return sanitized.toLowerCase();",
+        "    }",
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(testConfig, acceptAll);
+    const result = await matcher(source, [{ start: 9, end: 12 }]);
+    assertEquals(result.changed, false);
+});
+
+Deno.test("function matcher: `new` ref detection ignores member-callee and destructuring declarators", async () => {
+    // Defensive guards in instance-ref collection: a namespaced
+    // `new Lib.Formatter()` (non-Identifier callee) and a destructuring
+    // `const { x } = new Formatter()` (non-Identifier binding) must not be
+    // recorded as refs. Only the plain `const f = new Formatter()` qualifies,
+    // so the call site resolves to `f.clean(input)`.
+    const source = [
+        "class Formatter {",
+        "    clean(s) {",
+        "        const trimmed = s.trim();",
+        "        return trimmed.toLowerCase();",
+        "    }",
+        "}",
+        "",
+        "function run() {",
+        "    const noise = new Lib.Formatter();",
+        "    const { x } = new Formatter();",
+        "    const f = new Formatter();",
+        "    const sanitized = input.trim();",
+        "    return sanitized.toLowerCase();",
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(testConfig, acceptAll);
+    const result = await matcher(source, [{ start: 8, end: 13 }]);
+    assertEquals(result.changed, true);
+    assert(
+        result.source.includes("return f.clean(input);"),
+        "expected the plain `new Formatter()` ref to resolve to f.clean(input)",
+    );
 });
 
 Deno.test("function matcher: skips constructor in static method collection", async () => {
