@@ -203,9 +203,24 @@ body (ignoring variable names), dripbird replaces it with a call to that functio
 It uses fingerprint-based matching to find candidates and LLM verification to
 confirm the match is semantically correct.
 
-Works on standalone function declarations and static class methods. It matches both
-full statement sequences and single return expressions against existing function
-bodies.
+It matches both full statement sequences and single return expressions against
+existing function bodies.
+
+**Scope (single file):** standalone function declarations, static class methods, and
+instance class methods.
+
+- **Functions and static methods** are reachable from any context via their plain or
+  `ClassName.method` name.
+- **Instance methods, same class:** a duplicate inside another instance method of
+  the same class is replaced with `this.method(...)`. The call site and the target
+  share the same `this`, so this is always safe.
+- **Instance methods, external context:** a `this`-free (pure) instance method is
+  reachable from a free function, static method, or a _different_ class's method
+  when an instance reference is in scope at the call site. dripbird resolves one
+  from a typed parameter (`p: ClassName`) or a `const x = new ClassName(...)`
+  declared before the call site, and emits `<ref>.method(...)`. A `this`-using
+  instance method is not matched externally — no external context shares the
+  target's `this`, so the call would silently retarget instance state.
 
 **Before:**
 
@@ -242,6 +257,9 @@ function registerUser(username: string, email: string) {
 Skipped when:
 
 - The matching code is inside the same function it would call
+- An instance method target would be called from an external context but no instance
+  reference is in scope (no typed param or preceding `new`)
+- The target is a getter or setter (invoked as property access, not a call)
 - The LLM rejects the match as not semantically equivalent
 - No LLM API key is configured (`MOONSHOT_API_KEY`)
 

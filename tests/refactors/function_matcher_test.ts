@@ -1312,7 +1312,11 @@ Deno.test("function matcher: static method matches another static method body", 
     assert(result.source.includes("Utils.logMsg()"));
 });
 
-Deno.test("function matcher: skips non-static class methods", async () => {
+Deno.test("function matcher: instance method not matched from a free function (no this)", async () => {
+    // The instance method is collected as a target, but reaching it needs
+    // either `this.` (same-class instance method) or an in-scope instance
+    // reference (typed param / `new C()` before the call site). This free
+    // function has neither, so the match is gated out.
     const source = [
         "class Utils {",
         "    clean(s) {",
@@ -1362,6 +1366,384 @@ Deno.test("function matcher: matches sequence in instance method with static met
     const result = await matcher(source, [{ start: 6, end: 7 }]);
     assertEquals(result.changed, true);
     assert(result.source.includes("Processor.clean(input)"));
+});
+
+Deno.test("function matcher: instance method body matched within another instance method", async () => {
+    const source = [
+        "class Formatter {",
+        "    clean(s) {",
+        "        const trimmed = s.trim();",
+        "        return trimmed.toLowerCase();",
+        "    }",
+        "",
+        "    process(input) {",
+        "        const sanitized = input.trim();",
+        "        return sanitized.toLowerCase();",
+        "    }",
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(testConfig, acceptAll);
+    const result = await matcher(source, [{ start: 8, end: 9 }]);
+    assertEquals(result.changed, true);
+    assert(
+        result.source.includes("return this.clean(input);"),
+        "expected a this.clean(input) call site",
+    );
+});
+
+Deno.test("function matcher: instance method body (no return) matched within instance", async () => {
+    const source = [
+        "class Logger {",
+        "    emit(msg) {",
+        "        const upper = msg.toUpperCase();",
+        "        console.log(upper);",
+        "    }",
+        "",
+        "    announce(title) {",
+        "        const loud = title.toUpperCase();",
+        "        console.log(loud);",
+        "    }",
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(testConfig, acceptAll);
+    const result = await matcher(source, [{ start: 8, end: 9 }]);
+    assertEquals(result.changed, true);
+    assert(
+        result.source.includes("this.emit(title);"),
+        "expected a this.emit(title) call site",
+    );
+});
+
+Deno.test("function matcher: instance method not matched from a static method of same class", async () => {
+    // `this` inside a static method is the class constructor, not an
+    // instance, so an instance-method target can't be called via `this.`.
+    const source = [
+        "class Formatter {",
+        "    clean(s) {",
+        "        const trimmed = s.trim();",
+        "        return trimmed.toLowerCase();",
+        "    }",
+        "",
+        "    static process(input) {",
+        "        const sanitized = input.trim();",
+        "        return sanitized.toLowerCase();",
+        "    }",
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(testConfig, acceptAll);
+    const result = await matcher(source, [{ start: 8, end: 9 }]);
+    assertEquals(result.changed, false);
+});
+
+Deno.test("function matcher: instance method not matched from a different class", async () => {
+    const source = [
+        "class Formatter {",
+        "    clean(s) {",
+        "        const trimmed = s.trim();",
+        "        return trimmed.toLowerCase();",
+        "    }",
+        "}",
+        "",
+        "class Report {",
+        "    process(input) {",
+        "        const sanitized = input.trim();",
+        "        return sanitized.toLowerCase();",
+        "    }",
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(testConfig, acceptAll);
+    const result = await matcher(source, [{ start: 10, end: 11 }]);
+    assertEquals(result.changed, false);
+});
+
+Deno.test("function matcher: instance method expression match within instance", async () => {
+    const source = [
+        "class Scorer {",
+        "    bonus(points) {",
+        "        return points * 2;",
+        "    }",
+        "",
+        "    total(p) {",
+        "        const extra = p * 2;",
+        "    }",
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(testConfig, acceptAll);
+    const result = await matcher(source, [{ start: 7, end: 7 }]);
+    assertEquals(result.changed, true);
+    assert(
+        result.source.includes("const extra = this.bonus(p);"),
+        "expected a const extra = this.bonus(p) call site",
+    );
+});
+
+Deno.test("function matcher: zero-arg instance method algo replacement uses this", async () => {
+    const source = [
+        "class Greeter {",
+        "    greeting() {",
+        '        return "hi";',
+        "    }",
+        "",
+        "    welcome() {",
+        '        return "hi";',
+        "    }",
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(testConfig, acceptAll);
+    const result = await matcher(source, [{ start: 7, end: 7 }]);
+    assertEquals(result.changed, true);
+    assert(
+        result.source.includes("return this.greeting();"),
+        "expected a return this.greeting() call site",
+    );
+});
+
+Deno.test("function matcher: getters and setters are skipped as match targets", async () => {
+    // If the getter were collected, `const x = this._n;` would be rewritten to
+    // `const x = this.size();` -- calling a getter as a method. Skipping
+    // getters/setters prevents that.
+    const source = [
+        "class Box {",
+        "    get size() {",
+        "        return this._n;",
+        "    }",
+        "",
+        "    read() {",
+        "        const x = this._n;",
+        "    }",
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(testConfig, acceptAll);
+    const result = await matcher(source, [{ start: 7, end: 7 }]);
+    assertEquals(result.changed, false);
+    assert(!result.source.includes("this.size()"));
+});
+
+Deno.test("function matcher: instance method body matched externally via `new` ref in free function", async () => {
+    // `fmt` is constructed before the duplicate window, so it's an in-scope
+    // instance reference and the call site becomes `fmt.clean(input)`.
+    const source = [
+        "class Formatter {",
+        "    clean(s) {",
+        "        const trimmed = s.trim();",
+        "        return trimmed.toLowerCase();",
+        "    }",
+        "}",
+        "",
+        "function run() {",
+        "    const fmt = new Formatter();",
+        "    const sanitized = input.trim();",
+        "    return sanitized.toLowerCase();",
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(testConfig, acceptAll);
+    const result = await matcher(source, [{ start: 8, end: 12 }]);
+    assertEquals(result.changed, true);
+    assert(
+        result.source.includes("return fmt.clean(input);"),
+        "expected a fmt.clean(input) call site",
+    );
+});
+
+Deno.test("function matcher: instance method body matched externally via typed param", async () => {
+    // `fmt: Formatter` parameter is an in-scope instance reference inside
+    // another class's method -> `fmt.clean(input)`.
+    const source = [
+        "class Formatter {",
+        "    clean(s) {",
+        "        const trimmed = s.trim();",
+        "        return trimmed.toLowerCase();",
+        "    }",
+        "}",
+        "",
+        "class Report {",
+        "    process(fmt: Formatter, input) {",
+        "        const sanitized = input.trim();",
+        "        return sanitized.toLowerCase();",
+        "    }",
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(testConfig, acceptAll);
+    const result = await matcher(source, [{ start: 9, end: 12 }]);
+    assertEquals(result.changed, true);
+    assert(
+        result.source.includes("return fmt.clean(input);"),
+        "expected a fmt.clean(input) call site",
+    );
+});
+
+Deno.test("function matcher: zero-arg instance method matched externally via `new` ref", async () => {
+    const source = [
+        "class Greeter {",
+        "    greeting() {",
+        '        return "hi";',
+        "    }",
+        "}",
+        "",
+        "function run() {",
+        "    const g = new Greeter();",
+        '    return "hi";',
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(testConfig, acceptAll);
+    const result = await matcher(source, [{ start: 8, end: 10 }]);
+    assertEquals(result.changed, true);
+    assert(
+        result.source.includes("return g.greeting();"),
+        "expected a g.greeting() call site",
+    );
+});
+
+Deno.test("function matcher: instance method expression match externally via `new` ref", async () => {
+    const source = [
+        "class Scorer {",
+        "    bonus(points) {",
+        "        return points * 2;",
+        "    }",
+        "}",
+        "",
+        "function run() {",
+        "    const s = new Scorer();",
+        "    const extra = p * 2;",
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(testConfig, acceptAll);
+    const result = await matcher(source, [{ start: 8, end: 10 }]);
+    assertEquals(result.changed, true);
+    assert(
+        result.source.includes("const extra = s.bonus(p);"),
+        "expected a const extra = s.bonus(p) call site",
+    );
+});
+
+Deno.test("function matcher: external instance ref must be declared before the call site", async () => {
+    // `new Scorer()` is declared AFTER the duplicate statement, so it is not in
+    // scope at the call site (temporal gate) and the match is skipped.
+    const source = [
+        "class Scorer {",
+        "    bonus(points) {",
+        "        return points * 2;",
+        "    }",
+        "}",
+        "",
+        "function run() {",
+        "    const extra = p * 2;",
+        "    const s = new Scorer();",
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(testConfig, acceptAll);
+    const result = await matcher(source, [{ start: 8, end: 9 }]);
+    assertEquals(result.changed, false);
+});
+
+Deno.test("function matcher: typed param of a different class is not an instance ref", async () => {
+    // `fmt: Other` does not name an instance of Formatter, so there is no
+    // reachable ref and the instance-method target is gated out.
+    const source = [
+        "class Formatter {",
+        "    clean(s) {",
+        "        const trimmed = s.trim();",
+        "        return trimmed.toLowerCase();",
+        "    }",
+        "}",
+        "",
+        "class Other {",
+        "    process(fmt: Other, input) {",
+        "        const sanitized = input.trim();",
+        "        return sanitized.toLowerCase();",
+        "    }",
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(testConfig, acceptAll);
+    const result = await matcher(source, [{ start: 9, end: 12 }]);
+    assertEquals(result.changed, false);
+});
+
+Deno.test("function matcher: `new` ref detection ignores member-callee and destructuring declarators", async () => {
+    // Defensive guards in instance-ref collection: a namespaced
+    // `new Lib.Formatter()` (non-Identifier callee) and a destructuring
+    // `const { x } = new Formatter()` (non-Identifier binding) must not be
+    // recorded as refs. Only the plain `const f = new Formatter()` qualifies,
+    // so the call site resolves to `f.clean(input)`.
+    const source = [
+        "class Formatter {",
+        "    clean(s) {",
+        "        const trimmed = s.trim();",
+        "        return trimmed.toLowerCase();",
+        "    }",
+        "}",
+        "",
+        "function run() {",
+        "    const noise = new Lib.Formatter();",
+        "    const { x } = new Formatter();",
+        "    const f = new Formatter();",
+        "    const sanitized = input.trim();",
+        "    return sanitized.toLowerCase();",
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(testConfig, acceptAll);
+    const result = await matcher(source, [{ start: 8, end: 13 }]);
+    assertEquals(result.changed, true);
+    assert(
+        result.source.includes("return f.clean(input);"),
+        "expected the plain `new Formatter()` ref to resolve to f.clean(input)",
+    );
+});
+
+Deno.test("function matcher: this-using instance method not matched from external context", async () => {
+    // `clean` reads `this.prefix` — its `this` is the Formatter instance.
+    // From Report.process (a different class) the call site's `this` is a
+    // Report, so `fmt.clean(...)` would retarget `this.prefix` onto the
+    // Formatter ref. Even though `fmt: Formatter` is a valid in-scope ref,
+    // the target is gated out of external matching because its `this` can't
+    // be the call site's `this` (the bodies fingerprint-match only because
+    // both write `this.prefix`, which is exactly the divergent case).
+    const source = [
+        "class Formatter {",
+        '    prefix = ">>";',
+        "    clean(s) {",
+        "        return this.prefix + s.trim();",
+        "    }",
+        "}",
+        "",
+        "class Report {",
+        '    prefix = "<<";',
+        "    process(fmt: Formatter, input) {",
+        "        return this.prefix + input.trim();",
+        "    }",
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(testConfig, acceptAll);
+    const result = await matcher(source, [{ start: 10, end: 12 }]);
+    assertEquals(result.changed, false);
+});
+
+Deno.test("function matcher: this-using instance method still matched within same class", async () => {
+    // Counterpart to the external guard: a `this`-using instance method is
+    // safe to match from another instance method of the SAME class, where the
+    // call site's `this` and the target's `this` are the same instance. The
+    // call site becomes `this.greet(who)`. (`announce` has an extra statement
+    // so it isn't itself a single-statement target, keeping the match
+    // one-directional.)
+    const source = [
+        "class Greeter {",
+        '    label = "hi";',
+        "    greet(name) {",
+        "        return this.label + name.trim();",
+        "    }",
+        "    announce(who) {",
+        '        console.log("start");',
+        "        return this.label + who.trim();",
+        "    }",
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(testConfig, acceptAll);
+    const result = await matcher(source, [{ start: 8, end: 8 }]);
+    assertEquals(result.changed, true);
+    assert(
+        result.source.includes("return this.greet(who);"),
+        "expected a this.greet(who) call site (within-instance, this-safe)",
+    );
 });
 
 Deno.test("function matcher: skips constructor in static method collection", async () => {

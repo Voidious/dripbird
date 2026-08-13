@@ -7,7 +7,16 @@ import type { Refactor, RefactorContext, RefactorResult } from "../engine.ts";
 import type { LLMClient } from "../llm.ts";
 
 interface FunctionInfo {
+    /** Scope identifier used for self-skip and logs: `funcName` or `ClassName.methodName`. */
     name: string;
+    /** Where the function lives, which determines how it is invoked. */
+    kind: "function" | "staticMethod" | "instanceMethod";
+    /** Class name for class methods, else null. */
+    className: string | null;
+    /** Expression used to call the target: `funcName`, `ClassName.methodName`, or `this.methodName`. */
+    callName: string;
+    /** Whether the body references `this` — gates external-context matching (see resolveCallName). */
+    usesThis: boolean;
     node: any;
     bodyStatements: any[];
     bodySource: string;
@@ -25,6 +34,19 @@ interface SeqInfo {
     source: string;
     fingerprint: string;
     scope: string;
+    /** Enclosing function kind, used to gate where `this.`-qualified calls resolve. */
+    kind: "function" | "method";
+    /** For `kind === "method"`: whether the enclosing method is static. */
+    isStatic?: boolean;
+    /** For `kind === "method"`: the enclosing class name. */
+    className?: string | null;
+    /**
+     * For each class name, an identifier in scope at this sequence that refers
+     * to an instance of that class — from a typed param (`p: ClassName`) or a
+     * `const x = new ClassName(...)` declared before the sequence. Used to call
+     * instance methods from external contexts (outside `this.`).
+     */
+    instanceRefs: Map<string, string>;
     identifierMap: Map<string, string>;
 }
 
@@ -34,6 +56,7 @@ interface ExpressionMatch {
     endLine: number;
     stmtSource: string;
     func: FunctionInfo;
+    callName: string;
 }
 
 function parseSource(source: string): any {
@@ -169,6 +192,88 @@ function getParamNames(node: any): string[] {
         .filter((p: string | null): p is string => p !== null);
 }
 
+/** Name of a parameter's binding, if it's a simple identifier (incl. defaults). */
+function paramIdentifier(p: any): string | null {
+    if (p.type === "Identifier") return p.name;
+    if (p.type === "AssignmentPattern" && p.left?.type === "Identifier") {
+        return p.left.name;
+    }
+    return null;
+}
+
+/**
+ * For a parameter with a simple TS annotation `name: ClassName`, return that
+ * class name. Other annotation shapes (keywords, generics, destructuring) are
+ * ignored — only a named reference can point at a class instance in-file.
+ */
+function paramTypeName(p: any): string | null {
+    let id: any = p;
+    if (p.type === "AssignmentPattern") id = p.left;
+    if (!id || id.type !== "Identifier") return null;
+    const inner = id.typeAnnotation?.typeAnnotation;
+    if (
+        inner?.type === "TSTypeReference" &&
+        inner.typeName?.type === "Identifier"
+    ) {
+        return inner.typeName.name;
+    }
+    return null;
+}
+
+/**
+ * Identifiers in scope at `beforeLine` that refer to instances of a class
+ * defined in this file: typed params (`p: ClassName`) and `const x = new
+ * ClassName(...)` declared before the call site. Returns className -> refName
+ * (first match wins; params considered before local declarations).
+ */
+function collectInstanceRefs(
+    params: any[],
+    bodyStmts: any[],
+    beforeLine: number,
+): Map<string, string> {
+    const refs = new Map<string, string>();
+
+    for (const p of params) {
+        const id = paramIdentifier(p);
+        const typeName = paramTypeName(p);
+        if (id && typeName && !refs.has(typeName)) {
+            refs.set(typeName, id);
+        }
+    }
+
+    for (const stmt of bodyStmts) {
+        if (stmt.type !== "VariableDeclaration") continue;
+        for (const decl of stmt.declarations) {
+            if (decl.id?.type !== "Identifier") continue;
+            const init = decl.init;
+            if (!init || init.type !== "NewExpression") continue;
+            if (init.callee?.type !== "Identifier") continue;
+            const declLine = decl.loc!.start.line;
+            if (declLine >= beforeLine) continue;
+            if (!refs.has(init.callee.name)) {
+                refs.set(init.callee.name, decl.id.name);
+            }
+        }
+    }
+
+    return refs;
+}
+
+/** Whether any statement references `this` (a `ThisExpression`). */
+function usesThis(stmts: any[]): boolean {
+    let found = false;
+    for (const stmt of stmts) {
+        visit(stmt, {
+            visitThisExpression() {
+                found = true;
+                return false;
+            },
+        });
+        if (found) return true;
+    }
+    return found;
+}
+
 function collectFunctions(ast: any, sourceLines: string[]): FunctionInfo[] {
     const functions: FunctionInfo[] = [];
 
@@ -228,6 +333,10 @@ function collectFunctions(ast: any, sourceLines: string[]): FunctionInfo[] {
 
             functions.push({
                 name: node.id.name as string,
+                kind: "function",
+                className: null,
+                callName: node.id.name as string,
+                usesThis: usesThis(bodyStatements),
                 node,
                 bodyStatements,
                 bodySource,
@@ -247,7 +356,9 @@ function collectFunctions(ast: any, sourceLines: string[]): FunctionInfo[] {
                 this.traverse(path);
                 return;
             }
-            if (!node.static) {
+            // Getters/setters are invoked as property access, not calls, so a
+            // call-site replacement (`this.foo(...)`) would be wrong.
+            if (node.kind === "get" || node.kind === "set") {
                 this.traverse(path);
                 return;
             }
@@ -275,6 +386,13 @@ function collectFunctions(ast: any, sourceLines: string[]): FunctionInfo[] {
                 this.traverse(path);
                 return;
             }
+            const isStatic = !!node.static;
+            const fullName = `${className}.${methodName}`;
+            // `callName` is the within-class invocation (`this.methodName`) —
+            // the default when the call site is another instance method of the
+            // same class. From any other context the call site needs its own
+            // instance reference, resolved per-match in `resolveCallName`.
+            const callName = isStatic ? fullName : `this.${methodName}`;
 
             const bodyStatements = node.body.body;
             const params = getParamNames(node);
@@ -315,7 +433,11 @@ function collectFunctions(ast: any, sourceLines: string[]): FunctionInfo[] {
             }
 
             functions.push({
-                name: `${className}.${methodName}`,
+                name: fullName,
+                kind: isStatic ? "staticMethod" : "instanceMethod",
+                className,
+                callName,
+                usesThis: usesThis(bodyStatements),
                 node,
                 bodyStatements,
                 bodySource,
@@ -347,7 +469,12 @@ function collectSequences(
 ): SeqInfo[] {
     const sequences: SeqInfo[] = [];
 
-    function processBody(bodyStmts: any[], scope: string) {
+    function processBody(
+        bodyStmts: any[],
+        scope: string,
+        ctx: Pick<SeqInfo, "kind" | "isStatic" | "className">,
+        params: any[],
+    ) {
         const valid: Array<{ stmt: any; startLine: number; endLine: number }> = [];
         for (const stmt of bodyStmts) {
             if (stmt.type === "FunctionDeclaration") continue;
@@ -380,6 +507,12 @@ function collectSequences(
                     source: seqSource,
                     fingerprint,
                     scope,
+                    ...ctx,
+                    instanceRefs: collectInstanceRefs(
+                        params,
+                        bodyStmts,
+                        window[0].startLine,
+                    ),
                     identifierMap,
                 });
             }
@@ -393,7 +526,12 @@ function collectSequences(
                 this.traverse(path);
                 return;
             }
-            processBody(node.body.body, node.id.name as string);
+            processBody(
+                node.body.body,
+                node.id.name as string,
+                { kind: "function", isStatic: false, className: null },
+                node.params,
+            );
             this.traverse(path);
         },
         visitClassMethod(path) {
@@ -406,7 +544,12 @@ function collectSequences(
                 this.traverse(path);
                 return;
             }
-            processBody(node.body.body, `${className}.${methodName}`);
+            processBody(
+                node.body.body,
+                `${className}.${methodName}`,
+                { kind: "method", isStatic: !!node.static, className },
+                node.params,
+            );
             this.traverse(path);
         },
         visitFunctionExpression() {
@@ -430,11 +573,48 @@ function overlapsRange(
     );
 }
 
+/**
+ * Decide how to invoke a target from a given call site. Non-instance targets
+ * are always reachable via their default `callName`. An instance-method target
+ * is reachable as `this.methodName` from another instance method of the same
+ * class, or as `<ref>.methodName` from any context where an instance of the
+ * class is in scope (external context). Returns null when an instance-method
+ * target can't be reached — caller gates it out.
+ *
+ * External-context safety: a `this`-using instance method is only reachable
+ * via `this.` — its body's `this` is the target instance, which no external
+ * context (different class, static method, or free function) shares. Calling
+ * it as `<ref>.method()` would silently retarget that `this` onto the ref's
+ * instance. So `this`-using targets are gated out of external matching. A
+ * pure (`this`-free) target is unaffected — its result is instance-independent.
+ */
+function resolveCallName(
+    func: FunctionInfo,
+    ctx: {
+        kind: SeqInfo["kind"];
+        isStatic?: boolean;
+        className?: string | null;
+        instanceRefs: Map<string, string>;
+    },
+): string | null {
+    if (func.kind !== "instanceMethod") return func.callName;
+    if (
+        ctx.kind === "method" && !ctx.isStatic && ctx.className === func.className
+    ) {
+        return func.callName;
+    }
+    if (func.usesThis) return null;
+    const ref = ctx.instanceRefs.get(func.className!);
+    if (!ref) return null;
+    const methodName = func.name.slice(func.className!.length + 1);
+    return `${ref}.${methodName}`;
+}
+
 function findBodyMatches(
     sequences: SeqInfo[],
     functions: FunctionInfo[],
     ranges: ChangedRange[],
-): Array<{ seq: SeqInfo; func: FunctionInfo }> {
+): Array<{ seq: SeqInfo; func: FunctionInfo; callName: string }> {
     const bodyFpMap = new Map<string, FunctionInfo[]>();
     for (const func of functions) {
         const list = bodyFpMap.get(func.bodyFingerprint);
@@ -445,7 +625,8 @@ function findBodyMatches(
         }
     }
 
-    const matches: Array<{ seq: SeqInfo; func: FunctionInfo }> = [];
+    const matches: Array<{ seq: SeqInfo; func: FunctionInfo; callName: string }> =
+        [];
 
     for (const seq of sequences) {
         if (!overlapsRange(seq.startLine, seq.endLine, ranges)) continue;
@@ -456,7 +637,10 @@ function findBodyMatches(
         for (const func of funcs) {
             if (func.name === seq.scope) continue;
 
-            matches.push({ seq, func });
+            const callName = resolveCallName(func, seq);
+            if (!callName) continue;
+
+            matches.push({ seq, func, callName });
         }
     }
 
@@ -483,7 +667,12 @@ function findExpressionMatches(
 
     function checkStatement(
         stmt: any,
-        _scope: string,
+        ctx: {
+            kind: SeqInfo["kind"];
+            isStatic?: boolean;
+            className?: string | null;
+            instanceRefs: Map<string, string>;
+        },
     ) {
         if (!overlapsRange(stmt.loc.start.line, stmt.loc.end.line, ranges)) return;
 
@@ -517,6 +706,9 @@ function findExpressionMatches(
         const func = exprFpMap.get(norm.fingerprint);
         if (!func) return;
 
+        const callName = resolveCallName(func, ctx);
+        if (!callName) return;
+
         const source = sourceLines
             .slice(stmt.loc.start.line - 1, stmt.loc.end.line)
             .join("\n");
@@ -527,6 +719,7 @@ function findExpressionMatches(
             endLine: stmt.loc.end.line,
             stmtSource: source,
             func,
+            callName,
         });
     }
 
@@ -538,7 +731,16 @@ function findExpressionMatches(
                 return;
             }
             for (const stmt of node.body.body) {
-                checkStatement(stmt, node.id.name as string);
+                checkStatement(stmt, {
+                    kind: "function",
+                    isStatic: false,
+                    className: null,
+                    instanceRefs: collectInstanceRefs(
+                        node.params,
+                        node.body.body,
+                        stmt.loc!.start.line,
+                    ),
+                });
             }
             this.traverse(path);
         },
@@ -553,7 +755,16 @@ function findExpressionMatches(
                 return;
             }
             for (const stmt of node.body.body) {
-                checkStatement(stmt, `${className}.${methodName}`);
+                checkStatement(stmt, {
+                    kind: "method",
+                    isStatic: !!node.static,
+                    className,
+                    instanceRefs: collectInstanceRefs(
+                        node.params,
+                        node.body.body,
+                        stmt.loc!.start.line,
+                    ),
+                });
             }
             this.traverse(path);
         },
@@ -589,6 +800,7 @@ function getIndent(source: string): string {
 
 function buildCallFromMapping(
     func: FunctionInfo,
+    callName: string,
     seqIdentifierMap: Map<string, string>,
     targetCode: string,
     hasReturn: boolean,
@@ -608,7 +820,7 @@ function buildCallFromMapping(
     }
 
     const indent = getIndent(targetCode);
-    const callExpr = `${func.name}(${args.join(", ")})`;
+    const callExpr = `${callName}(${args.join(", ")})`;
 
     if (hasReturn) {
         return `${indent}return ${callExpr};\n`;
@@ -619,6 +831,7 @@ function buildCallFromMapping(
 function buildAssignmentCall(
     stmt: any,
     func: FunctionInfo,
+    callName: string,
 ): string | null {
     let targetName: string | null = null;
     let indent = "";
@@ -663,7 +876,7 @@ function buildAssignmentCall(
         args.push(reverseSeqMap.get(funcPlaceholder)!);
     }
 
-    const callExpr = `${func.name}(${args.join(", ")})`;
+    const callExpr = `${callName}(${args.join(", ")})`;
     if (keyword) {
         return `${indent}${keyword} ${targetName} = ${callExpr};\n`;
     }
@@ -743,6 +956,7 @@ export function createFunctionMatcher(
             endLine: number;
             codeBlock: string;
             func: FunctionInfo;
+            callName: string;
             algoReplacement: string | null;
         }> = [];
 
@@ -755,9 +969,9 @@ export function createFunctionMatcher(
                 const hasReturn = lastStmt.type === "ReturnStatement" &&
                     lastStmt.argument;
                 if (hasReturn) {
-                    algoReplacement = `${indent}return ${m.func.name}();\n`;
+                    algoReplacement = `${indent}return ${m.callName}();\n`;
                 } else {
-                    algoReplacement = `${indent}${m.func.name}();\n`;
+                    algoReplacement = `${indent}${m.callName}();\n`;
                 }
             } else {
                 const stmts = m.seq.statements;
@@ -766,6 +980,7 @@ export function createFunctionMatcher(
                     lastStmt.argument;
                 algoReplacement = buildCallFromMapping(
                     m.func,
+                    m.callName,
                     m.seq.identifierMap,
                     m.seq.source,
                     hasReturn,
@@ -776,17 +991,19 @@ export function createFunctionMatcher(
                 endLine: m.seq.endLine,
                 codeBlock: m.seq.source,
                 func: m.func,
+                callName: m.callName,
                 algoReplacement,
             });
         }
 
         for (const m of exprMatches) {
-            const algoReplacement = buildAssignmentCall(m.stmt, m.func);
+            const algoReplacement = buildAssignmentCall(m.stmt, m.func, m.callName);
             allMatches.push({
                 startLine: m.startLine,
                 endLine: m.endLine,
                 codeBlock: m.stmtSource,
                 func: m.func,
+                callName: m.callName,
                 algoReplacement,
             });
         }
@@ -839,7 +1056,7 @@ export function createFunctionMatcher(
                 } else {
                     replacement = await llm.generateCallReplacement(
                         match.codeBlock,
-                        match.func.name,
+                        match.callName,
                         funcSource,
                         source,
                         lastFeedback || undefined,
@@ -874,7 +1091,7 @@ export function createFunctionMatcher(
                 const reviewResult = await llm.reviewChange(
                     currentSource,
                     proposedSource,
-                    `replaced code at lines ${match.startLine}-${match.endLine} with call to ${match.func.name}`,
+                    `replaced code at lines ${match.startLine}-${match.endLine} with call to ${match.callName}`,
                 );
                 if (!reviewResult.accepted) {
                     log?.(
@@ -897,7 +1114,7 @@ export function createFunctionMatcher(
                 end: match.endLine,
             });
             descriptions.push(
-                `replaced code at lines ${match.startLine}-${match.endLine} with call to ${match.func.name}`,
+                `replaced code at lines ${match.startLine}-${match.endLine} with call to ${match.callName}`,
             );
         }
 
