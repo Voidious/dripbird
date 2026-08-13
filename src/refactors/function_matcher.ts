@@ -15,6 +15,8 @@ interface FunctionInfo {
     className: string | null;
     /** Expression used to call the target: `funcName`, `ClassName.methodName`, or `this.methodName`. */
     callName: string;
+    /** Whether the body references `this` — gates external-context matching (see resolveCallName). */
+    usesThis: boolean;
     node: any;
     bodyStatements: any[];
     bodySource: string;
@@ -257,6 +259,21 @@ function collectInstanceRefs(
     return refs;
 }
 
+/** Whether any statement references `this` (a `ThisExpression`). */
+function usesThis(stmts: any[]): boolean {
+    let found = false;
+    for (const stmt of stmts) {
+        visit(stmt, {
+            visitThisExpression() {
+                found = true;
+                return false;
+            },
+        });
+        if (found) return true;
+    }
+    return found;
+}
+
 function collectFunctions(ast: any, sourceLines: string[]): FunctionInfo[] {
     const functions: FunctionInfo[] = [];
 
@@ -319,6 +336,7 @@ function collectFunctions(ast: any, sourceLines: string[]): FunctionInfo[] {
                 kind: "function",
                 className: null,
                 callName: node.id.name as string,
+                usesThis: usesThis(bodyStatements),
                 node,
                 bodyStatements,
                 bodySource,
@@ -419,6 +437,7 @@ function collectFunctions(ast: any, sourceLines: string[]): FunctionInfo[] {
                 kind: isStatic ? "staticMethod" : "instanceMethod",
                 className,
                 callName,
+                usesThis: usesThis(bodyStatements),
                 node,
                 bodyStatements,
                 bodySource,
@@ -561,6 +580,13 @@ function overlapsRange(
  * class, or as `<ref>.methodName` from any context where an instance of the
  * class is in scope (external context). Returns null when an instance-method
  * target can't be reached — caller gates it out.
+ *
+ * External-context safety: a `this`-using instance method is only reachable
+ * via `this.` — its body's `this` is the target instance, which no external
+ * context (different class, static method, or free function) shares. Calling
+ * it as `<ref>.method()` would silently retarget that `this` onto the ref's
+ * instance. So `this`-using targets are gated out of external matching. A
+ * pure (`this`-free) target is unaffected — its result is instance-independent.
  */
 function resolveCallName(
     func: FunctionInfo,
@@ -577,6 +603,7 @@ function resolveCallName(
     ) {
         return func.callName;
     }
+    if (func.usesThis) return null;
     const ref = ctx.instanceRefs.get(func.className!);
     if (!ref) return null;
     const methodName = func.name.slice(func.className!.length + 1);

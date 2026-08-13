@@ -1690,6 +1690,62 @@ Deno.test("function matcher: `new` ref detection ignores member-callee and destr
     );
 });
 
+Deno.test("function matcher: this-using instance method not matched from external context", async () => {
+    // `clean` reads `this.prefix` — its `this` is the Formatter instance.
+    // From Report.process (a different class) the call site's `this` is a
+    // Report, so `fmt.clean(...)` would retarget `this.prefix` onto the
+    // Formatter ref. Even though `fmt: Formatter` is a valid in-scope ref,
+    // the target is gated out of external matching because its `this` can't
+    // be the call site's `this` (the bodies fingerprint-match only because
+    // both write `this.prefix`, which is exactly the divergent case).
+    const source = [
+        "class Formatter {",
+        '    prefix = ">>";',
+        "    clean(s) {",
+        "        return this.prefix + s.trim();",
+        "    }",
+        "}",
+        "",
+        "class Report {",
+        '    prefix = "<<";',
+        "    process(fmt: Formatter, input) {",
+        "        return this.prefix + input.trim();",
+        "    }",
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(testConfig, acceptAll);
+    const result = await matcher(source, [{ start: 10, end: 12 }]);
+    assertEquals(result.changed, false);
+});
+
+Deno.test("function matcher: this-using instance method still matched within same class", async () => {
+    // Counterpart to the external guard: a `this`-using instance method is
+    // safe to match from another instance method of the SAME class, where the
+    // call site's `this` and the target's `this` are the same instance. The
+    // call site becomes `this.greet(who)`. (`announce` has an extra statement
+    // so it isn't itself a single-statement target, keeping the match
+    // one-directional.)
+    const source = [
+        "class Greeter {",
+        '    label = "hi";',
+        "    greet(name) {",
+        "        return this.label + name.trim();",
+        "    }",
+        "    announce(who) {",
+        '        console.log("start");',
+        "        return this.label + who.trim();",
+        "    }",
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(testConfig, acceptAll);
+    const result = await matcher(source, [{ start: 8, end: 8 }]);
+    assertEquals(result.changed, true);
+    assert(
+        result.source.includes("return this.greet(who);"),
+        "expected a this.greet(who) call site (within-instance, this-safe)",
+    );
+});
+
 Deno.test("function matcher: skips constructor in static method collection", async () => {
     const source = [
         "class Foo {",
