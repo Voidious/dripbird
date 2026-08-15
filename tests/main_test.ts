@@ -332,6 +332,95 @@ Deno.test(
 );
 
 Deno.test(
+    "runInDir matches functions across files via existing import",
+    async () => {
+        const tempDir = await Deno.makeTempDir();
+        const utilPath = `${tempDir}/util.ts`;
+        const mainPath = `${tempDir}/main.ts`;
+
+        const utilSource = [
+            "export function sendGreeting(connection) {",
+            '    connection.send("Hello,");',
+            '    connection.send("I am from Earth.");',
+            "}",
+        ].join("\n");
+
+        const mainSource = [
+            'import { sendGreeting } from "./util";',
+            "",
+            "function run() {",
+            "    const conn = getConnection();",
+            '    conn.send("Hello,");',
+            '    conn.send("I am from Earth.");',
+            "}",
+        ].join("\n");
+
+        await Deno.writeTextFile(utilPath, utilSource);
+        await Deno.writeTextFile(mainPath, mainSource);
+
+        const diff = [
+            "--- a/main.ts",
+            "+++ b/main.ts",
+            "@@ -1,7 +1,7 @@",
+            ' import { sendGreeting } from "./util";',
+        ].join("\n");
+
+        // LLM tool-call mock: accept every match and review; only the
+        // evaluate_match and review tools are exercised (the algorithmic
+        // replacement handles the call site itself).
+        // deno-lint-ignore require-await
+        const fetchFn = (async (_url: unknown, init?: RequestInit) => {
+            const body = JSON.parse(String(init!.body));
+            const toolName = body.tools?.[0]?.function?.name ?? "";
+            const args = toolName === "evaluate_match"
+                ? { is_match: true, reason: "ok" }
+                : { accepted: true, feedback: "" };
+            return new Response(
+                JSON.stringify({
+                    choices: [{
+                        message: {
+                            content: null,
+                            tool_calls: [{
+                                function: {
+                                    name: toolName,
+                                    arguments: JSON.stringify(args),
+                                },
+                            }],
+                        },
+                    }],
+                    usage: {
+                        prompt_tokens: 10,
+                        completion_tokens: 5,
+                        total_tokens: 15,
+                    },
+                }),
+            );
+        }) as unknown as typeof fetch;
+
+        try {
+            const exitCode = await runInDir(diff, tempDir, {
+                apiKey: "test-key",
+                fetchFn,
+            });
+            assertEquals(exitCode, 1);
+
+            const modified = await Deno.readTextFile(mainPath);
+            assert(modified.includes("sendGreeting(conn);"));
+            assert(
+                modified.includes('import { sendGreeting } from "./util";'),
+                "import line must be untouched",
+            );
+            assert(!modified.includes('conn.send("Hello,");'));
+
+            const utilAfter = await Deno.readTextFile(utilPath);
+            assertEquals(utilAfter, utilSource);
+        } finally {
+            await Deno.remove(tempDir, { recursive: true });
+        }
+    },
+);
+
+Deno.test(
     "runInDir works without LLM (no API key)",
     async () => {
         const tempDir = await Deno.makeTempDir();

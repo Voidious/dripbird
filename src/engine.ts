@@ -9,6 +9,12 @@ export interface RefactorResult {
 export interface RefactorContext {
     filePath: string;
     log?: (msg: string) => void;
+    /**
+     * Read a file by absolute path, returning null when unreadable. Enables
+     * cross-file refactoring (e.g. the function matcher following existing
+     * relative imports).
+     */
+    readFile?: (path: string) => Promise<string | null>;
 }
 
 export type Refactor = (

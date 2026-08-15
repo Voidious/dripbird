@@ -222,6 +222,21 @@ instance class methods.
   instance method is not matched externally — no external context shares the
   target's `this`, so the call would silently retarget instance state.
 
+**Scope (across files):** a duplicate can also be replaced with a call to an
+exported function from another file, but only when the current file already imports
+that file with a relative specifier (`./` / `../`). This is the circular-dependency
+protection: dripbird never adds or rewrites imports — it only calls through bindings
+that already exist in the file — so cross-file matching can never introduce a new
+module dependency edge, and therefore can never create an import cycle.
+
+- **Named imports** (alias-aware) call the local binding; `import * as ns` calls
+  `ns.exportedName(...)`; a default-exported function is called through the
+  default-import binding.
+- **Imported classes:** static methods are called as `Binding.method(...)`; pure
+  instance methods follow the same in-scope instance-reference rules as single-file
+  matching (`p: Binding` or `new Binding(...)` before the call site). A `this`-using
+  instance method is never matched from another file.
+
 **Before:**
 
 ```typescript
@@ -260,6 +275,9 @@ Skipped when:
 - An instance method target would be called from an external context but no instance
   reference is in scope (no typed param or preceding `new`)
 - The target is a getter or setter (invoked as property access, not a call)
+- The target lives in another file the current file does not already import
+  (dripbird never adds imports, so it can't create circular dependencies)
+- The target lives in another file but is not exported from it
 - The LLM rejects the match as not semantically equivalent
 - No LLM API key is configured (`MOONSHOT_API_KEY`)
 

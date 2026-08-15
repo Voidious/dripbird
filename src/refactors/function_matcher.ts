@@ -5,8 +5,14 @@ import type { ChangedRange } from "../diff.ts";
 import type { Config } from "../config.ts";
 import type { Refactor, RefactorContext, RefactorResult } from "../engine.ts";
 import type { LLMClient } from "../llm.ts";
+import {
+    collectImportEdges,
+    describeExports,
+    remapExternalFunctions,
+    resolveImportTarget,
+} from "./function_matcher_imports.ts";
 
-interface FunctionInfo {
+export interface FunctionInfo {
     /** Scope identifier used for self-skip and logs: `funcName` or `ClassName.methodName`. */
     name: string;
     /** Where the function lives, which determines how it is invoked. */
@@ -17,6 +23,12 @@ interface FunctionInfo {
     callName: string;
     /** Whether the body references `this` — gates external-context matching (see resolveCallName). */
     usesThis: boolean;
+    /** Whether the function is defined in the file being refactored (vs. an imported file). */
+    isLocal: boolean;
+    /** Full source of the function from the file that defines it. */
+    funcSource: string;
+    /** Import specifier of the defining file for cross-file matches, else null. */
+    origin: string | null;
     node: any;
     bodyStatements: any[];
     bodySource: string;
@@ -337,6 +349,15 @@ function collectFunctions(ast: any, sourceLines: string[]): FunctionInfo[] {
                 className: null,
                 callName: node.id.name as string,
                 usesThis: usesThis(bodyStatements),
+                isLocal: true,
+                // recast strips `loc` from export-wrapped declarations, so
+                // slice when available and print the node otherwise.
+                funcSource: node.loc
+                    ? sourceLines
+                        .slice(node.loc.start.line - 1, node.loc.end.line)
+                        .join("\n")
+                    : print(node).code,
+                origin: null,
                 node,
                 bodyStatements,
                 bodySource,
@@ -438,6 +459,11 @@ function collectFunctions(ast: any, sourceLines: string[]): FunctionInfo[] {
                 className,
                 callName,
                 usesThis: usesThis(bodyStatements),
+                isLocal: true,
+                funcSource: sourceLines
+                    .slice(node.loc!.start.line - 1, node.loc!.end.line)
+                    .join("\n"),
+                origin: null,
                 node,
                 bodyStatements,
                 bodySource,
@@ -460,6 +486,67 @@ function collectFunctions(ast: any, sourceLines: string[]): FunctionInfo[] {
     });
 
     return functions;
+}
+
+/**
+ * Collect match candidates from files the current file already imports
+ * (relative specifiers only). This is the circular-dependency protection:
+ * dripbird never adds an import — it only calls through bindings that already
+ * exist in the file — so cross-file matching can never introduce a new module
+ * dependency edge. Requires `readFile` in the refactor context; without it
+ * (or without a context) matching stays single-file.
+ */
+async function collectExternalFunctions(
+    ast: any,
+    context: RefactorContext | undefined,
+    log: (msg: string) => void,
+): Promise<FunctionInfo[]> {
+    const readFile = context?.readFile;
+    const filePath = context?.filePath;
+    if (!readFile || !filePath) return [];
+
+    const out: FunctionInfo[] = [];
+    for (const edge of collectImportEdges(ast)) {
+        const target = await resolveImportTarget(
+            filePath,
+            edge.specifier,
+            readFile,
+        );
+        if (target === null) {
+            log(
+                `dripbird: function_matcher: could not resolve import ${edge.specifier} (skipping)`,
+            );
+            continue;
+        }
+
+        let targetAst: any;
+        try {
+            targetAst = parseSource(target);
+        } catch {
+            log(
+                `dripbird: function_matcher: could not parse import ${edge.specifier} (skipping)`,
+            );
+            continue;
+        }
+
+        const targetFunctions = collectFunctions(
+            targetAst,
+            target.split("\n"),
+        );
+        const remapped = remapExternalFunctions(
+            targetFunctions,
+            edge,
+            describeExports(targetAst),
+            edge.specifier,
+        );
+        if (remapped.length > 0) {
+            log(
+                `dripbird: function_matcher: ${remapped.length} callable function(s) from ${edge.specifier}`,
+            );
+        }
+        out.push(...remapped);
+    }
+    return out;
 }
 
 function collectSequences(
@@ -587,6 +674,10 @@ function overlapsRange(
  * it as `<ref>.method()` would silently retarget that `this` onto the ref's
  * instance. So `this`-using targets are gated out of external matching. A
  * pure (`this`-free) target is unaffected — its result is instance-independent.
+ *
+ * Cross-file targets are never invoked as `this.`: their class is defined in
+ * another file, so no method in the current file shares that class, even when
+ * the names coincide.
  */
 function resolveCallName(
     func: FunctionInfo,
@@ -599,7 +690,8 @@ function resolveCallName(
 ): string | null {
     if (func.kind !== "instanceMethod") return func.callName;
     if (
-        ctx.kind === "method" && !ctx.isStatic && ctx.className === func.className
+        func.isLocal && ctx.kind === "method" && !ctx.isStatic &&
+        ctx.className === func.className
     ) {
         return func.callName;
     }
@@ -635,7 +727,10 @@ function findBodyMatches(
         if (!funcs) continue;
 
         for (const func of funcs) {
-            if (func.name === seq.scope) continue;
+            // Self-skip only applies to same-file targets: a cross-file
+            // function can never BE the enclosing scope, even if identically
+            // named.
+            if (func.isLocal && func.name === seq.scope) continue;
 
             const callName = resolveCallName(func, seq);
             if (!callName) continue;
@@ -657,7 +752,11 @@ function findExpressionMatches(
     const exprFpMap = new Map<string, FunctionInfo>();
     for (const func of functions) {
         if (func.returnExprFingerprint) {
-            exprFpMap.set(func.returnExprFingerprint, func);
+            // First collected wins, so same-file functions are preferred
+            // over imported ones with identical fingerprints.
+            if (!exprFpMap.has(func.returnExprFingerprint)) {
+                exprFpMap.set(func.returnExprFingerprint, func);
+            }
         }
     }
 
@@ -890,9 +989,9 @@ export function createFunctionMatcher(
     return async (
         source: string,
         ranges: ChangedRange[],
-        _context?: RefactorContext,
+        context?: RefactorContext,
     ): Promise<RefactorResult> => {
-        const log = _context?.log ?? (() => {});
+        const log = context?.log ?? (() => {});
 
         let ast;
         try {
@@ -903,7 +1002,13 @@ export function createFunctionMatcher(
 
         const sourceLines = source.split("\n");
 
-        const functions = collectFunctions(ast, sourceLines);
+        const localFunctions = collectFunctions(ast, sourceLines);
+        const externalFunctions = await collectExternalFunctions(
+            ast,
+            context,
+            log,
+        );
+        const functions = [...localFunctions, ...externalFunctions];
         if (functions.length === 0) {
             log?.("dripbird: function_matcher: no functions found");
             return { changed: false, source, description: "" };
@@ -1020,12 +1125,17 @@ export function createFunctionMatcher(
             );
             if (overlaps) continue;
 
-            const funcSource = sourceLines
-                .slice(
-                    match.func.node.loc.start.line - 1,
-                    match.func.node.loc.end.line,
-                )
-                .join("\n");
+            // Cross-file targets carry their source from the imported file;
+            // note the provenance so LLM prompts explain the binding.
+            const funcSource = match.func.origin !== null
+                ? `// imported from ${match.func.origin}\n${match.func.funcSource}`
+                : match.func.funcSource;
+            const changeDesc =
+                `replaced code at lines ${match.startLine}-${match.endLine} with call to ${match.callName}${
+                    match.func.origin !== null
+                        ? ` (imported from ${match.func.origin})`
+                        : ""
+                }`;
 
             log?.(
                 `dripbird: function_matcher: candidate lines ${match.startLine}-${match.endLine} → ${match.func.name} (algo: ${
@@ -1091,7 +1201,7 @@ export function createFunctionMatcher(
                 const reviewResult = await llm.reviewChange(
                     currentSource,
                     proposedSource,
-                    `replaced code at lines ${match.startLine}-${match.endLine} with call to ${match.callName}`,
+                    changeDesc,
                 );
                 if (!reviewResult.accepted) {
                     log?.(
@@ -1113,9 +1223,7 @@ export function createFunctionMatcher(
                 start: match.startLine,
                 end: match.endLine,
             });
-            descriptions.push(
-                `replaced code at lines ${match.startLine}-${match.endLine} with call to ${match.callName}`,
-            );
+            descriptions.push(changeDesc);
         }
 
         if (descriptions.length === 0) {
