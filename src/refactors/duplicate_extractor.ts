@@ -102,7 +102,7 @@ function normalizeStatements(stmts: any[]): string {
     return cloned.map((s: any) => print(s).code).join("\n");
 }
 
-function usesThis(stmts: any[]): boolean {
+export function usesThis(stmts: any[]): boolean {
     let found = false;
     for (const stmt of stmts) {
         visit(stmt, {

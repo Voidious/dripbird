@@ -1,6 +1,27 @@
 import { assert, assertEquals, assertRejects } from "@std/assert";
-import { formatDuration, readStream, run, runInDir } from "../src/main.ts";
+import {
+    formatDuration,
+    readStream,
+    run,
+    runCrossFilePass,
+    runInDir,
+} from "../src/main.ts";
 import { createLLMClient, LLMStats, MoonshotClient } from "../src/llm.ts";
+import type { Config } from "../src/config.ts";
+
+const testConfigBase: Config = {
+    max_function_lines: 75,
+    function_splitter_retries: 2,
+    function_matcher_retries: 2,
+    duplicate_extractor_min_lines: 2,
+    duplicate_extractor_max_lines: 12,
+    duplicate_extractor_retries: 2,
+    provider: "moonshot",
+    model: "kimi-k2.5",
+    enabled_refactors: [],
+    disabled_refactors: [],
+    verbose: false,
+};
 
 function mockFetchWithUsage(
     response: string,
@@ -961,4 +982,231 @@ Deno.test("LLMStats and MoonshotClient full coverage in main process", async () 
     });
     assert(fromFactory);
     assertEquals(await fromFactory.nameFunction("c", ["a"]), "factory");
+});
+
+Deno.test(
+    "runInDir runs the cross-file duplicate pass over all diff files",
+    async () => {
+        const tempDir = await Deno.makeTempDir();
+
+        const sourceA = [
+            "function alpha(user) {",
+            "    const line = `Hi ${user}`;",
+            "    logger.log(line);",
+            "}",
+        ].join("\n");
+        const sourceB = [
+            "function greetCustomer(name) {",
+            "    const entry = `Hi ${name}`;",
+            "    logger.log(entry);",
+            "}",
+        ].join("\n");
+
+        await Deno.writeTextFile(`${tempDir}/a.ts`, sourceA);
+        await Deno.writeTextFile(`${tempDir}/b.ts`, sourceB);
+        await Deno.writeTextFile(
+            `${tempDir}/dripbird.yml`,
+            [
+                "verbose: true",
+                "enabled_refactors:",
+                "    - duplicate_extractor",
+                "",
+            ].join("\n"),
+        );
+
+        const diff = [
+            "--- a/a.ts",
+            "+++ b/a.ts",
+            "@@ -1,4 +1,4 @@",
+            " function alpha(user) {",
+            "--- a/b.ts",
+            "+++ b/b.ts",
+            "@@ -1,4 +1,4 @@",
+            " function greetCustomer(name) {",
+        ].join("\n");
+
+        // LLM mock is never called: cross-file detection is pure AST, and
+        // neither file has a WITHIN-file duplicate for the per-file
+        // extractor to chew on.
+        // deno-lint-ignore require-await
+        const fetchFn = (async () =>
+            new Response(
+                JSON.stringify({ choices: [] }),
+            )) as unknown as typeof fetch;
+
+        const messages: string[] = [];
+        const orig = console.error;
+        console.error = (...args: unknown[]) => messages.push(args.join(" "));
+
+        try {
+            const exitCode = await runInDir(diff, tempDir, {
+                apiKey: "test-key",
+                fetchFn,
+            });
+
+            // Detection only: no changes yet, so exit 0.
+            assertEquals(exitCode, 0);
+            assert(
+                messages.some((m) =>
+                    m.includes("cross-file group") &&
+                    m.includes("a.ts") &&
+                    m.includes("b.ts")
+                ),
+            );
+
+            assertEquals(await Deno.readTextFile(`${tempDir}/a.ts`), sourceA);
+            assertEquals(await Deno.readTextFile(`${tempDir}/b.ts`), sourceB);
+        } finally {
+            console.error = orig;
+            await Deno.remove(tempDir, { recursive: true });
+        }
+    },
+);
+
+Deno.test(
+    "runCrossFilePass applies modified and created files from a stub refactor",
+    async () => {
+        const tempDir = await Deno.makeTempDir();
+        await Deno.writeTextFile(
+            `${tempDir}/a.ts`,
+            "const original = 1;\n",
+        );
+
+        const stub = {
+            name: "stub_cross",
+            refactor: async (_files: unknown, context: {
+                baseDir: string;
+                readFile: (p: string) => Promise<string | null>;
+            }) => {
+                // Exercise the readFile seam the real cross-file refactor
+                // uses to inspect files outside the diff.
+                assertEquals(
+                    await context.readFile(`${tempDir}/a.ts`),
+                    "const original = 1;\n",
+                );
+                assertEquals(
+                    await context.readFile(`${tempDir}/nope.ts`),
+                    null,
+                );
+                return {
+                    modified: new Map([["a.ts", "const rewritten = 2;\n"]]),
+                    created: new Map([
+                        ["common/helper.ts", "export const helper = 3;\n"],
+                    ]),
+                    changed: true,
+                    description: "stub: extracted helper into common/helper.ts",
+                };
+            },
+        };
+
+        const logs: string[] = [];
+        const orig = console.error;
+        console.error = (...args: unknown[]) => logs.push(args.join(" "));
+
+        try {
+            const changed = await runCrossFilePass(
+                [stub],
+                [{ file: "a.ts", ranges: [{ start: 1, end: 1 }] }],
+                tempDir,
+                {
+                    ...testConfigBase,
+                    verbose: true,
+                },
+                (msg) => logs.push(msg),
+                () => {},
+            );
+
+            assertEquals(changed, true);
+            assertEquals(
+                await Deno.readTextFile(`${tempDir}/a.ts`),
+                "const rewritten = 2;\n",
+            );
+            assertEquals(
+                await Deno.readTextFile(`${tempDir}/common/helper.ts`),
+                "export const helper = 3;\n",
+            );
+            assert(
+                logs.some((m) => m.includes("stub: extracted helper")),
+            );
+        } finally {
+            console.error = orig;
+            await Deno.remove(tempDir, { recursive: true });
+        }
+    },
+);
+
+Deno.test(
+    "runCrossFilePass skips unreadable diff files and unchanged results",
+    async () => {
+        const tempDir = await Deno.makeTempDir();
+        await Deno.writeTextFile(
+            `${tempDir}/a.ts`,
+            "const original = 1;\n",
+        );
+
+        const seen: string[] = [];
+        const stub = {
+            name: "stub_cross",
+            // deno-lint-ignore require-await
+            refactor: async (files: Array<{ file: string }>) => {
+                for (const f of files) seen.push(f.file);
+                return {
+                    modified: new Map(),
+                    created: new Map(),
+                    changed: false,
+                    description: "",
+                };
+            },
+        };
+
+        const logs: string[] = [];
+        const orig = console.error;
+        console.error = (...args: unknown[]) => logs.push(args.join(" "));
+
+        try {
+            const changed = await runCrossFilePass(
+                [stub],
+                [
+                    { file: "a.ts", ranges: [{ start: 1, end: 1 }] },
+                    { file: "missing.ts", ranges: [{ start: 1, end: 1 }] },
+                ],
+                tempDir,
+                testConfigBase,
+                () => {},
+                () => {},
+            );
+
+            assertEquals(changed, false);
+            // The unreadable file is skipped before reaching the refactor.
+            assertEquals(seen, ["a.ts"]);
+            assert(
+                logs.some((m) =>
+                    m.includes("skipping missing.ts") &&
+                    m.includes("unable to read")
+                ),
+            );
+        } finally {
+            console.error = orig;
+            await Deno.remove(tempDir, { recursive: true });
+        }
+    },
+);
+
+Deno.test("runCrossFilePass is a no-op with no refactors or files", async () => {
+    const config = testConfigBase;
+    assertEquals(
+        await runCrossFilePass([], [], "/nonexistent", config, () => {}, () => {}),
+        false,
+    );
+    assertEquals(
+        await runCrossFilePass(
+            [],
+            [{ file: "a.ts", ranges: [{ start: 1, end: 1 }] }],
+            "/nonexistent",
+            config,
+            () => {},
+            () => {},
+        ),
+        false,
+    );
 });

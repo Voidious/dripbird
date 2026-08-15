@@ -1,12 +1,18 @@
 import { groupByFile, parseDiff } from "./diff.ts";
+import type { ChangedRange } from "./diff.ts";
 import { runRefactors } from "./engine.ts";
 import { type Config, filterRefactors, loadConfig } from "./config.ts";
-import type { NamedRefactor } from "./engine.ts";
+import type {
+    FileChangeset,
+    NamedCrossFileRefactor,
+    NamedRefactor,
+} from "./engine.ts";
 import { createLLMClient, LLMStats } from "./llm.ts";
 import { ifNotElse } from "./refactors/if_not_else.ts";
 import { createFunctionSplitter } from "./refactors/function_splitter.ts";
 import { createFunctionMatcher } from "./refactors/function_matcher.ts";
 import { createDuplicateExtractor } from "./refactors/duplicate_extractor.ts";
+import { createCrossFileDuplicateExtractor } from "./refactors/duplicate_extractor_cross.ts";
 import { TypeCheckerImpl } from "./type_checker.ts";
 import type { LLMOptions } from "./llm.ts";
 
@@ -108,6 +114,57 @@ function printConfig(config: Config): void {
     }
 }
 
+/**
+ * Run cross-file refactors over every file in the diff, writing their
+ * results (rewritten diff files, newly created files) to disk. Returns
+ * whether anything changed. Exposed for tests and for symmetry with
+ * runRefactors; runInDir calls it before the per-file loop.
+ */
+export async function runCrossFilePass(
+    crossFileRefactors: NamedCrossFileRefactor[],
+    files: Array<{ file: string; ranges: ChangedRange[] }>,
+    baseDir: string,
+    config: Config,
+    log: (msg: string) => void,
+    printConfigOnce: () => void,
+): Promise<boolean> {
+    if (crossFileRefactors.length === 0 || files.length === 0) return false;
+
+    const changesets: FileChangeset[] = [];
+    for (const { file, ranges } of files) {
+        try {
+            const source = await Deno.readTextFile(`${baseDir}/${file}`);
+            changesets.push({ file, source, ranges });
+        } catch {
+            console.error(`dripbird: skipping ${file}: unable to read`);
+        }
+    }
+
+    let anyChanged = false;
+    for (const { refactor } of crossFileRefactors) {
+        const result = await refactor(changesets, {
+            baseDir,
+            log: config.verbose ? log : undefined,
+            readFile: (p: string) => Deno.readTextFile(p).catch(() => null),
+        });
+        if (!result.changed) continue;
+        for (const [file, source] of result.modified) {
+            await Deno.writeTextFile(`${baseDir}/${file}`, source);
+        }
+        for (const [file, content] of result.created) {
+            // The path always contains baseDir, so the directory part is
+            // never empty.
+            const dir = `${baseDir}/${file}`.split("/").slice(0, -1).join("/");
+            await Deno.mkdir(dir, { recursive: true });
+            await Deno.writeTextFile(`${baseDir}/${file}`, content);
+        }
+        printConfigOnce();
+        console.error(`dripbird: ${result.description}`);
+        anyChanged = true;
+    }
+    return anyChanged;
+}
+
 export async function runInDir(
     diff: string,
     baseDir: string,
@@ -150,6 +207,11 @@ export async function runInDir(
         logFn: log,
     });
     const typeChecker = new TypeCheckerImpl();
+    // Cross-file refactors see every diff file at once and may rewrite them
+    // and create new files. They register under the SAME name as their
+    // per-file counterpart so `enabled_refactors`/`disabled_refactors`
+    // govern both halves coherently.
+    const namedCrossFileRefactors: NamedCrossFileRefactor[] = [];
     if (llm) {
         namedRefactors.push({
             name: "function_splitter",
@@ -168,13 +230,40 @@ export async function runInDir(
             name: "duplicate_extractor",
             refactor: createDuplicateExtractor(config, llm, typeChecker),
         });
+        namedCrossFileRefactors.push({
+            name: "duplicate_extractor",
+            refactor: createCrossFileDuplicateExtractor(config),
+        });
     }
 
     const refactors = filterRefactors(namedRefactors, config);
+    const crossFileRefactors = filterRefactors(namedCrossFileRefactors, config);
 
     const files = groupByFile(hunks);
     let anyChanged = false;
     let configPrinted = false;
+
+    const printConfigOnce = () => {
+        if (!configPrinted) {
+            printConfig(config);
+            configPrinted = true;
+            flushLog();
+        }
+    };
+
+    // Cross-file pass runs BEFORE the per-file loop: it rewrites diff files
+    // and creates new ones (e.g. a shared helper module) on disk, and the
+    // per-file loop then re-reads from disk and applies single-file
+    // refactors on top. New files are not part of the diff, so the per-file
+    // loop naturally skips them.
+    anyChanged = await runCrossFilePass(
+        crossFileRefactors,
+        files,
+        baseDir,
+        config,
+        log,
+        printConfigOnce,
+    ) || anyChanged;
 
     const fileResults: FileResult[] = [];
 
@@ -212,22 +301,14 @@ export async function runInDir(
         });
 
         if (result.changed) {
-            if (!configPrinted) {
-                printConfig(config);
-                configPrinted = true;
-                flushLog();
-            }
+            printConfigOnce();
             await Deno.writeTextFile(filePath, result.source);
             console.error(
                 `dripbird: ${file}: ${result.description}`,
             );
             anyChanged = true;
         } else if (config.verbose) {
-            if (!configPrinted) {
-                printConfig(config);
-                configPrinted = true;
-                flushLog();
-            }
+            printConfigOnce();
             console.error(`dripbird: ${file}: no changes`);
         }
     }

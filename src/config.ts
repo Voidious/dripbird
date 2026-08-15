@@ -1,5 +1,4 @@
 import { parse as parseYaml } from "@std/yaml";
-import type { NamedRefactor } from "./engine.ts";
 
 export interface Config {
     max_function_lines: number;
@@ -15,12 +14,12 @@ export interface Config {
     verbose: boolean;
 }
 
-export function filterRefactors(
-    refactors: NamedRefactor[],
+export function filterRefactors<T extends { name: string }>(
+    refactors: T[],
     config: Config,
-): NamedRefactor[] {
+): T[] {
     const { enabled_refactors, disabled_refactors } = config;
-    let filtered: NamedRefactor[] = refactors;
+    let filtered: T[] = refactors;
     if (enabled_refactors.length > 0) {
         const enabled = new Set(enabled_refactors);
         filtered = filtered.filter((r) => enabled.has(r.name));
