@@ -94,14 +94,14 @@ disabled_refactors:
 
 ### LLM Setup
 
-The function splitter and function matcher refactors require a Moonshot AI API key.
-Set the `MOONSHOT_API_KEY` environment variable:
+The function splitter, function matcher, and duplicate extractor refactors require a
+Moonshot AI API key. Set the `MOONSHOT_API_KEY` environment variable:
 
 ```bash
 export MOONSHOT_API_KEY="your-api-key-here"
 ```
 
-If the API key is not set, both are automatically disabled. All other refactors
+If the API key is not set, all three are automatically disabled. All other refactors
 (e.g., flip negated if/else) work without LLM access.
 
 ## Refactors
@@ -236,6 +236,9 @@ module dependency edge, and therefore can never create an import cycle.
   instance methods follow the same in-scope instance-reference rules as single-file
   matching (`p: Binding` or `new Binding(...)` before the call site). A `this`-using
   instance method is never matched from another file.
+- Bare specifiers (package names, `npm:`/`@std/` specifiers) and type-only imports
+  are not followed — they provide no file path or no runtime binding to call
+  through.
 
 **Before:**
 
@@ -269,6 +272,37 @@ function registerUser(username: string, email: string) {
 }
 ```
 
+**Across files (example):** the current file (`example.ts`) already imports a helper
+from `./util`, and `contactHome` duplicates the helper's body:
+
+```typescript
+// util.ts
+export function sendGreeting(c) {
+    c.send("Hello,");
+    c.send("I am from Earth.");
+    c.send("We come in peace.");
+}
+
+// example.ts
+import { sendGreeting } from "./util";
+
+function contactHome(base) {
+    const signal = getSignal(base);
+    signal.send("Hello,");
+    signal.send("I am from Earth.");
+    signal.send("We come in peace.");
+}
+```
+
+**After** (in `example.ts` only — `util.ts` is untouched and no import is added):
+
+```typescript
+function contactHome(base) {
+    const signal = getSignal(base);
+    sendGreeting(signal);
+}
+```
+
 Skipped when:
 
 - The matching code is inside the same function it would call
@@ -278,6 +312,8 @@ Skipped when:
 - The target lives in another file the current file does not already import
   (dripbird never adds imports, so it can't create circular dependencies)
 - The target lives in another file but is not exported from it
+- An imported file cannot be resolved or parsed (the import is skipped with a log
+  line)
 - The LLM rejects the match as not semantically equivalent
 - No LLM API key is configured (`MOONSHOT_API_KEY`)
 
@@ -369,6 +405,7 @@ src/cli.ts                 Entry point: reads stdin, calls run()
                                 ├── if_not_else.ts         Flip negated if/else
                                 ├── function_splitter.ts   Split long functions (LLM-assisted)
                                 ├── function_matcher.ts    Replace duplicate code with function calls (LLM-assisted)
+                                ├── function_matcher_imports.ts Cross-file import resolution for the function matcher
                                 └── duplicate_extractor.ts Extract duplicate blocks into a helper (LLM-assisted)
 ```
 
@@ -378,7 +415,9 @@ src/cli.ts                 Entry point: reads stdin, calls run()
    `engine.ts`.
 2. The function receives
    `(source: string, ranges: ChangedRange[], context?: RefactorContext)` and returns
-   `{ changed, source, description }` (sync or async).
+   `{ changed, source, description }` (sync or async). `RefactorContext` carries the
+   file's path and an optional `readFile` for following imports across files (see
+   `function_matcher_imports.ts`).
 3. Check `inRange(node.loc.start.line, node.loc.end.line, ranges)` to only touch
    changed regions.
 4. Register it as a `NamedRefactor` in `src/main.ts` with a unique name (used by
