@@ -196,7 +196,11 @@ export async function runInDir(
             source,
             ranges,
             refactors,
-            { filePath, log: config.verbose ? log : undefined },
+            {
+                filePath,
+                log: config.verbose ? log : undefined,
+                readFile: (p: string) => Deno.readTextFile(p).catch(() => null),
+            },
         );
         const fileDuration = performance.now() - fileStart;
 

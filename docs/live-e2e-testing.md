@@ -36,7 +36,7 @@ layout:
 
 ```
 samples/<refactor>/<variant>/
-    a/example.ts      # input file
+    a/                 # input file(s) — example.ts, plus extra files when needed
     b/example.ts      # one valid expected output
     dripbird.yml      # config scoped to this sample's refactor
 ```
@@ -49,7 +49,7 @@ repo=/path/to/dripbird
 sample=function_splitter/basic      # any dir under samples/
 
 work=$(mktemp -d)
-cp "$repo/samples/$sample/a/example.ts" "$work/example.ts"
+cp "$repo/samples/$sample/a/"* "$work/"
 cp "$repo/samples/$sample/dripbird.yml" "$work/dripbird.yml"
 cd "$work"
 
@@ -65,6 +65,9 @@ Notes:
   relative to `Deno.cwd()` (`runInDir` in `src/main.ts`).
 - Each sample's `dripbird.yml` is scoped — it enables just that refactor (the
   splitter sample also lowers `max_function_lines` to `20`).
+- Cross-file samples (e.g. `function_matcher/cross_file`) ship extra input files
+  alongside `example.ts` (its imported `util.ts`); the diff only covers
+  `example.ts`, but the refactor resolves the relative import against the workdir.
 
 ### Available samples
 
@@ -73,6 +76,7 @@ Notes:
 | `if_not_else/basic`              | if_not_else         | no       | deterministic (pure AST)    |
 | `function_matcher/basic`         | function_matcher    | yes      | constrained — usually exact |
 | `function_matcher/static_method` | function_matcher    | yes      | constrained — usually exact |
+| `function_matcher/cross_file`    | function_matcher    | yes      | constrained — usually exact |
 | `function_splitter/basic`        | function_splitter   | yes      | open-ended — diverges       |
 | `duplicate_extractor/basic`      | duplicate_extractor | yes      | open-ended — diverges       |
 
@@ -165,11 +169,12 @@ for sample in \
     if_not_else/basic \
     function_matcher/basic \
     function_matcher/static_method \
+    function_matcher/cross_file \
     function_splitter/basic \
     duplicate_extractor/basic; do
     echo "=== $sample ==="
     work=$(mktemp -d)
-    cp "$repo/samples/$sample/a/example.ts" "$work/example.ts"
+    cp "$repo/samples/$sample/a/"* "$work/"
     cp "$repo/samples/$sample/dripbird.yml" "$work/dripbird.yml"
     (cd "$work" && git diff --no-index /dev/null example.ts 2>/dev/null | dripbird)
     echo "exit: $?"

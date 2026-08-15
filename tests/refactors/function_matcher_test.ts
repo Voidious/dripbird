@@ -2303,7 +2303,7 @@ Deno.test("function matcher: algo replacement uses LLM on retry after parse fail
 Deno.test("function matcher: algo replacement retries via LLM after review rejection", async () => {
     const source = [
         "function getGreeting() {",
-        '    return "Hello, World!";',
+        '        return "Hello, World!";',
         "}",
         "",
         "function run() {",
@@ -2357,4 +2357,461 @@ Deno.test("function matcher: algo replacement retries via LLM after review rejec
     assert(logs.some((l) => l.includes("LLM review rejected")));
     assert(logs.some((l) => l.includes("attempt 1/3")));
     assert(logs.some((l) => l.includes("should use return")));
+});
+
+// ---------------------------------------------------------------------------
+// Cross-file matching
+// ---------------------------------------------------------------------------
+
+const utilSource = [
+    "export function sendGreeting(connection) {",
+    '    connection.send("Hello,");',
+    '    connection.send("I am from Earth.");',
+    "}",
+    "",
+    "function notExported(x) {",
+    '    console.log("private", x);',
+    "}",
+].join("\n");
+
+function crossFileContext(
+    files: Record<string, string>,
+    currentPath = "/proj/a.ts",
+): {
+    filePath: string;
+    readFile: (p: string) => Promise<string | null>;
+    log: (m: string) => void;
+    logs: string[];
+} {
+    const logs: string[] = [];
+    return {
+        filePath: currentPath,
+        // deno-lint-ignore require-await
+        readFile: async (p: string) => files[p] ?? null,
+        log: (m: string) => {
+            logs.push(m);
+        },
+        logs,
+    };
+}
+
+Deno.test("function matcher: cross-file body match via named import", async () => {
+    const source = [
+        'import { sendGreeting } from "./util";',
+        "",
+        "function run() {",
+        "    const conn = getConnection();",
+        '    conn.send("Hello,");',
+        '    conn.send("I am from Earth.");',
+        "}",
+    ].join("\n");
+
+    const verifiedSources: string[] = [];
+    const llm = mockLLM({});
+    const capturingLLM: LLMClient = {
+        ...llm,
+        // deno-lint-ignore require-await
+        async verifyFunctionMatch(_block: string, funcSource: string) {
+            verifiedSources.push(funcSource);
+            return { isMatch: true, reason: "test" };
+        },
+    };
+
+    const context = crossFileContext({ "/proj/util.ts": utilSource });
+    const matcher = createFunctionMatcher(testConfig, capturingLLM);
+    const result = await matcher(source, [{ start: 4, end: 7 }], context);
+    assertEquals(result.changed, true);
+    assert(result.source.includes("sendGreeting(conn);"));
+    assert(
+        result.source.includes('import { sendGreeting } from "./util";'),
+        "import must be left untouched",
+    );
+    assert(
+        result.description.includes("(imported from ./util)"),
+        "description should note the import origin",
+    );
+    assert(context.logs.some((l) => l.includes("callable function(s)")));
+    assert(
+        verifiedSources[0].includes("// imported from ./util"),
+        "LLM should see the import provenance header",
+    );
+    assert(
+        verifiedSources[0].includes('connection.send("I am from Earth.");'),
+        "LLM should see the target function source from the other file",
+    );
+});
+
+Deno.test("function matcher: cross-file match uses aliased import binding", async () => {
+    const source = [
+        'import { sendGreeting as greet } from "./util";',
+        "",
+        "function run() {",
+        "    const conn = getConnection();",
+        '    conn.send("Hello,");',
+        '    conn.send("I am from Earth.");',
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(testConfig, acceptAll);
+    const result = await matcher(
+        source,
+        [{ start: 4, end: 7 }],
+        crossFileContext({ "/proj/util.ts": utilSource }),
+    );
+    assertEquals(result.changed, true);
+    assert(result.source.includes("greet(conn);"));
+});
+
+Deno.test("function matcher: cross-file match via namespace import", async () => {
+    const source = [
+        'import * as util from "./util";',
+        "",
+        "function run() {",
+        "    const conn = getConnection();",
+        '    conn.send("Hello,");',
+        '    conn.send("I am from Earth.");',
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(testConfig, acceptAll);
+    const result = await matcher(
+        source,
+        [{ start: 4, end: 7 }],
+        crossFileContext({ "/proj/util.ts": utilSource }),
+    );
+    assertEquals(result.changed, true);
+    assert(result.source.includes("util.sendGreeting(conn);"));
+});
+
+Deno.test("function matcher: cross-file match via default import", async () => {
+    const target = [
+        "export default function sendGreeting(connection) {",
+        '    connection.send("Hello,");',
+        '    connection.send("I am from Earth.");',
+        "}",
+    ].join("\n");
+    const source = [
+        'import greet from "./util";',
+        "",
+        "function run() {",
+        "    const conn = getConnection();",
+        '    conn.send("Hello,");',
+        '    conn.send("I am from Earth.");',
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(testConfig, acceptAll);
+    const result = await matcher(
+        source,
+        [{ start: 4, end: 7 }],
+        crossFileContext({ "/proj/util.ts": target }),
+    );
+    assertEquals(result.changed, true);
+    assert(result.source.includes("greet(conn);"));
+});
+
+Deno.test("function matcher: cross-file expression match", async () => {
+    const target = [
+        "export function double(n) {",
+        "    return n * 2;",
+        "}",
+    ].join("\n");
+    const source = [
+        'import { double } from "./util";',
+        "",
+        "function run() {",
+        "    const result = count * 2;",
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(testConfig, acceptAll);
+    const result = await matcher(
+        source,
+        [{ start: 4, end: 4 }],
+        crossFileContext({ "/proj/util.ts": target }),
+    );
+    assertEquals(result.changed, true);
+    assert(result.source.includes("const result = double(count);"));
+});
+
+Deno.test("function matcher: cross-file static method via named class import", async () => {
+    const target = [
+        "export class Str {",
+        "    static clean(s) {",
+        "        return s.trim().toLowerCase();",
+        "    }",
+        "}",
+    ].join("\n");
+    const source = [
+        'import { Str } from "./util";',
+        "",
+        "function run() {",
+        "    const sanitized = input.trim().toLowerCase();",
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(testConfig, acceptAll);
+    const result = await matcher(
+        source,
+        [{ start: 4, end: 4 }],
+        crossFileContext({ "/proj/util.ts": target }),
+    );
+    assertEquals(result.changed, true);
+    assert(result.source.includes("const sanitized = Str.clean(input);"));
+});
+
+Deno.test("function matcher: cross-file pure instance method via in-scope ref", async () => {
+    const target = [
+        "export class Scorer {",
+        "    bonus(points) {",
+        "        return points * 2;",
+        "    }",
+        "}",
+    ].join("\n");
+    const source = [
+        'import { Scorer } from "./util";',
+        "",
+        "function run() {",
+        "    const s = new Scorer();",
+        "    const extra = p * 2;",
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(testConfig, acceptAll);
+    const result = await matcher(
+        source,
+        [{ start: 5, end: 5 }],
+        crossFileContext({ "/proj/util.ts": target }),
+    );
+    assertEquals(result.changed, true);
+    assert(result.source.includes("const extra = s.bonus(p);"));
+});
+
+Deno.test("function matcher: cross-file this-using instance method never matched", async () => {
+    const target = [
+        "export class Formatter {",
+        '    prefix = ">>";',
+        "    clean(s) {",
+        "        return this.prefix + s.trim();",
+        "    }",
+        "}",
+    ].join("\n");
+    const source = [
+        'import { Formatter } from "./util";',
+        "",
+        "class Report {",
+        '    prefix = "<<";',
+        "    process(fmt: Formatter, input) {",
+        "        return this.prefix + input.trim();",
+        "    }",
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(testConfig, acceptAll);
+    const result = await matcher(
+        source,
+        [{ start: 6, end: 6 }],
+        crossFileContext({ "/proj/util.ts": target }),
+    );
+    assertEquals(result.changed, false);
+});
+
+Deno.test("function matcher: cross-file pure instance method not matched via this", async () => {
+    // The current file's class is named identically to the imported class,
+    // but it is a different class: `this.clean(...)` would dispatch to the
+    // local Report.clean (undefined), so the cross-file target must not be
+    // resolved through the same-class branch.
+    const target = [
+        "export class Formatter {",
+        "    clean(s) {",
+        "        const trimmed = s.trim();",
+        "        return trimmed.toLowerCase();",
+        "    }",
+        "}",
+    ].join("\n");
+    const source = [
+        'import { Formatter as Other } from "./util";',
+        "",
+        "class Formatter {",
+        "    process(input) {",
+        "        const sanitized = input.trim();",
+        "        return sanitized.toLowerCase();",
+        "    }",
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(testConfig, acceptAll);
+    const result = await matcher(
+        source,
+        [{ start: 5, end: 6 }],
+        crossFileContext({ "/proj/util.ts": target }),
+    );
+    assertEquals(result.changed, false);
+});
+
+Deno.test("function matcher: no match without an existing import edge (no new imports)", async () => {
+    // The identical function exists in util.ts, but a.ts does not import it.
+    // dripbird must not add an import — that could create a circular
+    // dependency — so there is no match.
+    const source = [
+        "function run() {",
+        "    const conn = getConnection();",
+        '    conn.send("Hello,");',
+        '    conn.send("I am from Earth.");',
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(testConfig, acceptAll);
+    const result = await matcher(
+        source,
+        [{ start: 2, end: 4 }],
+        crossFileContext({ "/proj/util.ts": utilSource }),
+    );
+    assertEquals(result.changed, false);
+    assert(!result.source.includes("import"));
+});
+
+Deno.test("function matcher: type-only imports are not callable bindings", async () => {
+    const source = [
+        'import type { sendGreeting } from "./util";',
+        "",
+        "function run() {",
+        "    const conn = getConnection();",
+        '    conn.send("Hello,");',
+        '    conn.send("I am from Earth.");',
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(testConfig, acceptAll);
+    const result = await matcher(
+        source,
+        [{ start: 4, end: 6 }],
+        crossFileContext({ "/proj/util.ts": utilSource }),
+    );
+    assertEquals(result.changed, false);
+});
+
+Deno.test("function matcher: non-exported imported functions are not candidates", async () => {
+    const source = [
+        'import { other } from "./util";',
+        "",
+        "function run() {",
+        '    console.log("private", value);',
+        "}",
+    ].join("\n");
+    const target = utilSource + "\nexport const other = 1;\n";
+    const matcher = createFunctionMatcher(testConfig, acceptAll);
+    const result = await matcher(
+        source,
+        [{ start: 4, end: 4 }],
+        crossFileContext({ "/proj/util.ts": target }),
+    );
+    assertEquals(result.changed, false);
+});
+
+Deno.test("function matcher: unresolved import is skipped with a log", async () => {
+    const source = [
+        'import { sendGreeting } from "./missing";',
+        "",
+        "function run() {",
+        "    const conn = getConnection();",
+        '    conn.send("Hello,");',
+        '    conn.send("I am from Earth.");',
+        "}",
+    ].join("\n");
+    const context = crossFileContext({ "/proj/util.ts": utilSource });
+    const matcher = createFunctionMatcher(testConfig, acceptAll);
+    const result = await matcher(source, [{ start: 4, end: 6 }], context);
+    assertEquals(result.changed, false);
+    assert(
+        context.logs.some((l) => l.includes("could not resolve import ./missing")),
+    );
+});
+
+Deno.test("function matcher: unparseable imported file is skipped with a log", async () => {
+    const source = [
+        'import { sendGreeting } from "./util";',
+        "",
+        "function run() {",
+        "    const conn = getConnection();",
+        '    conn.send("Hello,");',
+        '    conn.send("I am from Earth.");',
+        "}",
+    ].join("\n");
+    const context = crossFileContext({
+        "/proj/util.ts": "function broken( {{{ invalid",
+    });
+    const matcher = createFunctionMatcher(testConfig, acceptAll);
+    const result = await matcher(source, [{ start: 4, end: 6 }], context);
+    assertEquals(result.changed, false);
+    assert(
+        context.logs.some((l) => l.includes("could not parse import ./util")),
+    );
+});
+
+Deno.test("function matcher: local function preferred over identical imported one", async () => {
+    const target = [
+        "export function double(n) {",
+        "    return n * 2;",
+        "}",
+    ].join("\n");
+    const source = [
+        'import { double as d2 } from "./util";',
+        "",
+        "function double(n) {",
+        "    return n * 2;",
+        "}",
+        "",
+        "function run() {",
+        "    const result = count * 2;",
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(testConfig, acceptAll);
+    const result = await matcher(
+        source,
+        [{ start: 8, end: 8 }],
+        crossFileContext({ "/proj/util.ts": target }),
+    );
+    assertEquals(result.changed, true);
+    assert(result.source.includes("const result = double(count);"));
+    assert(!result.source.includes("d2(count)"));
+});
+
+Deno.test("function matcher: imported function with the enclosing scope's name is not self-skipped", async () => {
+    // The duplicate lives in `run`, and the imported target is also named
+    // `run` (bound locally as `step`). A different file's `run` can never be
+    // the same function, so the self-skip must not apply.
+    const target = [
+        "export function run(connection) {",
+        '    connection.send("Hello,");',
+        '    connection.send("I am from Earth.");',
+        "}",
+    ].join("\n");
+    const source = [
+        'import { run as step } from "./util";',
+        "",
+        "function run() {",
+        "    const conn = getConnection();",
+        '    conn.send("Hello,");',
+        '    conn.send("I am from Earth.");',
+        "}",
+    ].join("\n");
+    const matcher = createFunctionMatcher(testConfig, acceptAll);
+    const result = await matcher(
+        source,
+        [{ start: 4, end: 6 }],
+        crossFileContext({ "/proj/util.ts": target }),
+    );
+    assertEquals(result.changed, true);
+    assert(result.source.includes("step(conn);"));
+});
+
+Deno.test("function matcher: cross-file disabled without readFile in context", async () => {
+    const source = [
+        'import { sendGreeting } from "./util";',
+        "",
+        "function run() {",
+        "    const conn = getConnection();",
+        '    conn.send("Hello,");',
+        '    conn.send("I am from Earth.");',
+        "}",
+    ].join("\n");
+    const logs: string[] = [];
+    const matcher = createFunctionMatcher(testConfig, acceptAll);
+    const result = await matcher(source, [{ start: 4, end: 6 }], {
+        filePath: "test.ts",
+        log: (msg) => logs.push(msg),
+    });
+    assertEquals(result.changed, false);
+    assert(logs.some((l) => l.includes("found 1 function(s)")));
 });
