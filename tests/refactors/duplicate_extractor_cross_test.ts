@@ -1,7 +1,12 @@
 import { assert, assertEquals } from "@std/assert";
+import * as BABEL from "@babel/parser";
 import {
     createCrossFileDuplicateExtractor,
     findCrossFileDuplicateGroups,
+    gateCrossFileGroups,
+    insertImport,
+    resolveLocalBinding,
+    resolveModulePath,
 } from "../../src/refactors/duplicate_extractor_cross.ts";
 import type { Config } from "../../src/config.ts";
 
@@ -225,4 +230,302 @@ Deno.test("cross-file extractor is a detection-only no-op for now", async () => 
     assert(logs[0].includes("cross-file group"));
     assert(logs[0].includes("a.ts"));
     assert(logs[0].includes("b.ts"));
+    // Placement was resolved: the gate reports the shared directory.
+    assert(logs[0].includes("/tmp/common"));
+});
+
+Deno.test("resolveLocalBinding returns free names and suffixes collisions", () => {
+    const source = [
+        'import { helper } from "./x";',
+        "const helper2 = 1;",
+        "function run() {}",
+    ].join("\n");
+    const ast = babelParse(source);
+
+    assertEquals(resolveLocalBinding("greet", ast), "greet");
+    assertEquals(resolveLocalBinding("helper", ast), "helper3");
+    assertEquals(resolveLocalBinding("helper2", ast), "helper22");
+    assertEquals(resolveLocalBinding("run", ast), "run2");
+});
+
+function babelParse(source: string) {
+    return BABEL.parse(source, {
+        sourceType: "module",
+        plugins: ["typescript", "jsx"],
+    });
+}
+
+Deno.test("insertImport places the import after the last existing import", () => {
+    const source = [
+        'import { a } from "./a";',
+        'import { b } from "./b";',
+        "",
+        "function run() {}",
+    ].join("\n");
+
+    assertEquals(
+        insertImport(source, "./common/helper", "helper", "helper"),
+        [
+            'import { a } from "./a";',
+            'import { b } from "./b";',
+            'import { helper } from "./common/helper";',
+            "",
+            "function run() {}",
+        ].join("\n"),
+    );
+});
+
+Deno.test("insertImport lands at the top of import-free files", () => {
+    const source = ["function run() {}", ""].join("\n");
+
+    assertEquals(
+        insertImport(source, "./common/helper", "helper", "helper"),
+        [
+            'import { helper } from "./common/helper";',
+            "function run() {}",
+            "",
+        ].join("\n"),
+    );
+});
+
+Deno.test("insertImport aliases when the local name differs", () => {
+    const source = 'import { x } from "./x";\n';
+
+    assertEquals(
+        insertImport(source, "./common/helper", "helper", "helper2"),
+        [
+            'import { x } from "./x";',
+            'import { helper as helper2 } from "./common/helper";',
+            "",
+        ].join("\n"),
+    );
+});
+
+Deno.test("insertImport returns null for unparseable source", () => {
+    assertEquals(
+        insertImport("function {{{", "./common/helper", "helper", "helper"),
+        null,
+    );
+});
+
+Deno.test("resolveModulePath suffixes existing files", async () => {
+    const existing = new Set<string>();
+    const exists = (p: string) => Promise.resolve(existing.has(p));
+
+    assertEquals(
+        await resolveModulePath("/base/common", "helper", exists),
+        "/base/common/helper.ts",
+    );
+
+    existing.add("/base/common/helper.ts");
+    assertEquals(
+        await resolveModulePath("/base/common", "helper", exists),
+        "/base/common/helper2.ts",
+    );
+
+    existing.add("/base/common/helper2.ts");
+    assertEquals(
+        await resolveModulePath("/base/common", "helper", exists),
+        "/base/common/helper3.ts",
+    );
+});
+
+Deno.test("gateCrossFileGroups resolves placement for movable groups", async () => {
+    const groups = findCrossFileDuplicateGroups(
+        filesOf([
+            { file: "a.ts", source: sourceA },
+            { file: "b.ts", source: sourceB },
+        ]),
+        2,
+        12,
+    );
+    assertEquals(groups.length, 1);
+
+    const logs: string[] = [];
+    const gated = await gateCrossFileGroups(
+        groups,
+        filesOf([
+            { file: "a.ts", source: sourceA },
+            { file: "b.ts", source: sourceB },
+        ]),
+        "/base",
+        () => Promise.resolve(null),
+        (msg) => logs.push(msg),
+    );
+
+    assertEquals(gated.length, 1);
+    assertEquals(gated[0].sharedDirAbs, "/base/common");
+    assertEquals(gated[0].group, groups[0]);
+    assert(logs[0].includes("/base/common"));
+});
+
+Deno.test("gateCrossFileGroups skips groups with unmovable imports", async () => {
+    const withImport = [
+        'import { log } from "./missing";',
+        "",
+        "function alpha(user) {",
+        "    const line = `Hi ${user}`;",
+        "    log(line);",
+        "}",
+    ].join("\n");
+    const withImportB = [
+        'import { log } from "./missing";',
+        "",
+        "function greetCustomer(name) {",
+        "    const entry = `Hi ${name}`;",
+        "    log(entry);",
+        "}",
+    ].join("\n");
+
+    const files = filesOf([
+        { file: "a.ts", source: withImport },
+        { file: "b.ts", source: withImportB },
+    ]);
+    const groups = findCrossFileDuplicateGroups(files, 2, 12);
+    assertEquals(groups.length, 1);
+
+    const logs: string[] = [];
+    const gated = await gateCrossFileGroups(
+        groups,
+        files,
+        "/base",
+        () => Promise.resolve(null),
+        (msg) => logs.push(msg),
+    );
+
+    assertEquals(gated.length, 0);
+    assert(
+        logs.some((m) =>
+            m.includes("skipped cross-file group") &&
+            m.includes("./missing")
+        ),
+    );
+});
+
+Deno.test("gateCrossFileGroups passes movable relative imports", async () => {
+    const withImport = [
+        'import { log } from "./log";',
+        "",
+        "function alpha(user) {",
+        "    const line = `Hi ${user}`;",
+        "    log(line);",
+        "}",
+    ].join("\n");
+    const withImportB = [
+        'import { log } from "./log";',
+        "",
+        "function greetCustomer(name) {",
+        "    const entry = `Hi ${name}`;",
+        "    log(entry);",
+        "}",
+    ].join("\n");
+
+    const files = filesOf([
+        { file: "a.ts", source: withImport },
+        { file: "b.ts", source: withImportB },
+    ]);
+    const groups = findCrossFileDuplicateGroups(files, 2, 12);
+    assertEquals(groups.length, 1);
+
+    const readFile = (p: string) =>
+        Promise.resolve(p === "/base/log.ts" ? "export const log = 1;\n" : null);
+
+    const logs: string[] = [];
+    const gated = await gateCrossFileGroups(
+        groups,
+        files,
+        "/base",
+        readFile,
+        (msg) => logs.push(msg),
+    );
+
+    assertEquals(gated.length, 1);
+});
+
+Deno.test("gateCrossFileGroups gates namespace and default imports too", async () => {
+    const withNamespace = [
+        'import * as log from "./log";',
+        "",
+        "function alpha(user) {",
+        "    const line = `Hi ${user}`;",
+        "    log.write(line);",
+        "}",
+    ].join("\n");
+    const withDefault = [
+        'import log from "./log";',
+        "",
+        "function greetCustomer(name) {",
+        "    const entry = `Hi ${name}`;",
+        "    log(entry);",
+        "}",
+    ].join("\n");
+
+    const files = filesOf([
+        { file: "a.ts", source: withNamespace },
+        { file: "b.ts", source: withDefault },
+    ]);
+    const groups = findCrossFileDuplicateGroups(files, 2, 12);
+    // log.write vs log: different member shapes, so no fingerprint match —
+    // call each shape against itself instead by pairing same-shaped files.
+    const nsFiles = filesOf([
+        { file: "a.ts", source: withNamespace },
+        { file: "b.ts", source: withNamespace },
+    ]);
+    const nsGroups = findCrossFileDuplicateGroups(nsFiles, 2, 12);
+    assertEquals(nsGroups.length, 1);
+
+    const readFile = (p: string) =>
+        Promise.resolve(p === "/base/log.ts" ? "export const log = 1;\n" : null);
+
+    const gated = await gateCrossFileGroups(
+        nsGroups,
+        nsFiles,
+        "/base",
+        readFile,
+        () => {},
+    );
+    assertEquals(gated.length, 1);
+
+    const defFiles = filesOf([
+        { file: "a.ts", source: withDefault },
+        { file: "b.ts", source: withDefault },
+    ]);
+    const defGroups = findCrossFileDuplicateGroups(defFiles, 2, 12);
+    assertEquals(defGroups.length, 1);
+    const gatedDef = await gateCrossFileGroups(
+        defGroups,
+        defFiles,
+        "/base",
+        readFile,
+        () => {},
+    );
+    assertEquals(gatedDef.length, 1);
+
+    // Silence unused-variable lint for the mismatched-shape grouping above.
+    assertEquals(groups.length, 0);
+});
+
+Deno.test("gateCrossFileGroups skips when every candidate dir is a file", async () => {
+    const files = filesOf([
+        { file: "a.ts", source: sourceA },
+        { file: "b.ts", source: sourceB },
+    ]);
+    const groups = findCrossFileDuplicateGroups(files, 2, 12);
+
+    // Every candidate directory path under /base exists as a readable file.
+    const readFile = (_p: string) => Promise.resolve("content");
+
+    const logs: string[] = [];
+    const gated = await gateCrossFileGroups(
+        groups,
+        files,
+        "/base",
+        readFile,
+        (msg) => logs.push(msg),
+    );
+
+    assertEquals(gated.length, 0);
+    assert(
+        logs.some((m) => m.includes("no usable shared directory")),
+    );
 });
