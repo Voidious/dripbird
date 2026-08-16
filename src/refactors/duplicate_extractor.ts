@@ -48,7 +48,7 @@ function cloneDeep(node: any): any {
     return result;
 }
 
-function isPropertyContext(parent: any, node: any): boolean {
+export function isPropertyContext(parent: any, node: any): boolean {
     if (
         parent.type === "MemberExpression" &&
         parent.property === node &&
