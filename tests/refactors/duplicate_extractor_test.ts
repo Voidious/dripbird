@@ -27,6 +27,8 @@ const testConfig: Config = {
     duplicate_extractor_min_lines: 2,
     duplicate_extractor_max_lines: 12,
     duplicate_extractor_retries: 2,
+    duplicate_extractor_shared_dir: "common",
+    duplicate_extractor_cross_file: true,
     provider: "moonshot",
     model: "kimi-k2.5",
     enabled_refactors: [],

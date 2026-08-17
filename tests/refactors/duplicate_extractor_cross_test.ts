@@ -13,6 +13,7 @@ import {
     insertImport,
     resolveLocalBinding,
     resolveModulePath,
+    sharedDirCandidates,
 } from "../../src/refactors/duplicate_extractor_cross.ts";
 import type { Config } from "../../src/config.ts";
 import { TypeCheckerImpl } from "../../src/type_checker.ts";
@@ -24,6 +25,8 @@ const testConfig: Config = {
     duplicate_extractor_min_lines: 2,
     duplicate_extractor_max_lines: 12,
     duplicate_extractor_retries: 2,
+    duplicate_extractor_shared_dir: "common",
+    duplicate_extractor_cross_file: true,
     provider: "moonshot",
     model: "kimi-k2.5",
     enabled_refactors: [],
@@ -1047,6 +1050,80 @@ Deno.test("gateCrossFileGroups skips when every candidate dir is a file", async 
     assertEquals(gated.length, 0);
     assert(
         logs.some((m) => m.includes("no usable shared directory")),
+    );
+});
+
+Deno.test("sharedDirCandidates puts the configured name first", () => {
+    assertEquals(
+        sharedDirCandidates(testConfig),
+        ["common", "shared", "lib", "util"],
+    );
+    const custom: Config = {
+        ...testConfig,
+        duplicate_extractor_shared_dir: "helpers",
+    };
+    assertEquals(
+        sharedDirCandidates(custom),
+        ["helpers", "common", "shared", "lib", "util"],
+    );
+    // A configured backup name must not appear twice.
+    const dupe: Config = {
+        ...testConfig,
+        duplicate_extractor_shared_dir: "lib",
+    };
+    assertEquals(
+        sharedDirCandidates(dupe),
+        ["lib", "common", "shared", "util"],
+    );
+});
+
+Deno.test("gateCrossFileGroups honors custom candidate dirs", async () => {
+    const files = filesOf([
+        { file: "a.ts", source: sourceA },
+        { file: "b.ts", source: sourceB },
+    ]);
+    const groups = findCrossFileDuplicateGroups(files, 2, 12);
+
+    const logs: string[] = [];
+    const gated = await gateCrossFileGroups(
+        groups,
+        files,
+        "/base",
+        () => Promise.resolve(null),
+        (msg) => logs.push(msg),
+        ["helpers", "common"],
+    );
+
+    assertEquals(gated.length, 1);
+    assertEquals(gated[0].sharedDirAbs, "/base/helpers");
+});
+
+Deno.test("cross-file extractor uses the configured shared dir", async () => {
+    const config: Config = {
+        ...testConfig,
+        duplicate_extractor_shared_dir: "helpers",
+    };
+    const result = await createCrossFileDuplicateExtractor(
+        config,
+        crossLLM({}),
+    )(
+        filesOf([
+            { file: "a.ts", source: sourceA },
+            { file: "b.ts", source: sourceB },
+        ]),
+        {
+            baseDir: "/base",
+            log: () => {},
+            readFile: () => Promise.resolve(null),
+        },
+    );
+
+    assertEquals(result.changed, true);
+    assert(result.created.has("helpers/greetUser.ts"));
+    assert(
+        result.modified.get("a.ts")!.includes(
+            'import { greetUser } from "./helpers/greetUser";',
+        ),
     );
 });
 

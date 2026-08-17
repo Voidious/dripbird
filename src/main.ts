@@ -233,10 +233,12 @@ export async function runInDir(
             name: "duplicate_extractor",
             refactor: createDuplicateExtractor(config, llm, typeChecker),
         });
-        namedCrossFileRefactors.push({
-            name: "duplicate_extractor",
-            refactor: createCrossFileDuplicateExtractor(config, llm),
-        });
+        if (config.duplicate_extractor_cross_file) {
+            namedCrossFileRefactors.push({
+                name: "duplicate_extractor",
+                refactor: createCrossFileDuplicateExtractor(config, llm),
+            });
+        }
     }
 
     const refactors = filterRefactors(namedRefactors, config);

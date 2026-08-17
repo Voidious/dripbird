@@ -54,11 +54,21 @@ import { parse } from "recast";
 import * as babelParser from "@babel/parser";
 
 /**
- * Candidate shared-directory names under the common ancestor, tried in
- * order (`common` first, then boring backups). The configurable version of
- * this list arrives with the config piece.
+ * Fallback shared-directory names tried after the configured preferred
+ * name (see `sharedDirCandidates`).
  */
 const SHARED_DIR_CANDIDATES = ["common", "shared", "lib", "util"];
+
+/**
+ * Candidate shared-directory names under the common ancestor, tried in
+ * order: the configured name first (`duplicate_extractor_shared_dir`,
+ * default `common`), then the boring backups that are not already in
+ * the list.
+ */
+export function sharedDirCandidates(config: Config): string[] {
+    const preferred = config.duplicate_extractor_shared_dir;
+    return [preferred, ...SHARED_DIR_CANDIDATES.filter((d) => d !== preferred)];
+}
 
 const IDENTIFIER_RE = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 
@@ -278,6 +288,7 @@ export async function gateCrossFileGroups(
     baseDir: string,
     readFile: (path: string) => Promise<string | null>,
     log: (msg: string) => void,
+    candidateDirs: string[] = SHARED_DIR_CANDIDATES,
 ): Promise<GatedGroup[]> {
     // Files were parsed during detection with the same babel parser, so
     // parsing here cannot fail; a cache keeps the per-group loop cheap.
@@ -300,7 +311,7 @@ export async function gateCrossFileGroups(
         const absFiles = fileNames.map((f) => `${baseDir}/${f}`);
         const ancestor = commonAncestorDir(absFiles);
         const dirName = await pickSharedDir(
-            SHARED_DIR_CANDIDATES,
+            candidateDirs,
             ancestor,
             (p) => readFile(p).then((s) => s !== null),
         );
@@ -933,6 +944,7 @@ export function createCrossFileDuplicateExtractor(
                 baseDir,
                 readFile,
                 log,
+                sharedDirCandidates(config),
             );
             if (gated.length === 0) break;
 

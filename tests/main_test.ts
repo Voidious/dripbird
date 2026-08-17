@@ -16,6 +16,8 @@ const testConfigBase: Config = {
     duplicate_extractor_min_lines: 2,
     duplicate_extractor_max_lines: 12,
     duplicate_extractor_retries: 2,
+    duplicate_extractor_shared_dir: "common",
+    duplicate_extractor_cross_file: true,
     provider: "moonshot",
     model: "kimi-k2.5",
     enabled_refactors: [],
@@ -969,6 +971,8 @@ Deno.test("LLMStats and MoonshotClient full coverage in main process", async () 
         duplicate_extractor_min_lines: 2,
         duplicate_extractor_max_lines: 12,
         duplicate_extractor_retries: 2,
+        duplicate_extractor_shared_dir: "common",
+        duplicate_extractor_cross_file: true,
         provider: "moonshot",
         model: "m",
         enabled_refactors: [],
@@ -1071,6 +1075,97 @@ Deno.test(
                 ),
             );
 
+            assertEquals(await Deno.readTextFile(`${tempDir}/a.ts`), sourceA);
+            assertEquals(await Deno.readTextFile(`${tempDir}/b.ts`), sourceB);
+        } finally {
+            console.error = orig;
+            await Deno.remove(tempDir, { recursive: true });
+        }
+    },
+);
+
+Deno.test(
+    "runInDir skips the cross-file duplicate pass when disabled in config",
+    async () => {
+        const tempDir = await Deno.makeTempDir();
+
+        const sourceA = [
+            "function alpha(user) {",
+            "    const line = `Hi ${user}`;",
+            "    logger.log(line);",
+            "}",
+        ].join("\n");
+        const sourceB = [
+            "function greetCustomer(name) {",
+            "    const entry = `Hi ${name}`;",
+            "    logger.log(entry);",
+            "}",
+        ].join("\n");
+
+        await Deno.writeTextFile(`${tempDir}/a.ts`, sourceA);
+        await Deno.writeTextFile(`${tempDir}/b.ts`, sourceB);
+        await Deno.writeTextFile(
+            `${tempDir}/dripbird.yml`,
+            [
+                "verbose: true",
+                "duplicate_extractor_cross_file: false",
+                "enabled_refactors:",
+                "    - duplicate_extractor",
+                "",
+            ].join("\n"),
+        );
+
+        const diff = [
+            "--- a/a.ts",
+            "+++ b/a.ts",
+            "@@ -1,4 +1,4 @@",
+            " function alpha(user) {",
+            "--- a/b.ts",
+            "+++ b/b.ts",
+            "@@ -1,4 +1,4 @@",
+            " function greetCustomer(name) {",
+        ].join("\n");
+
+        // deno-lint-ignore require-await
+        const fetchFn = (async (_url: unknown, init?: RequestInit) => {
+            const body = JSON.parse(String(init!.body));
+            const toolName = body.tools?.[0]?.function?.name ?? "";
+            const args = toolName === "evaluate_duplicates"
+                ? { is_match: false, exclude_indices: [], reason: "no" }
+                : { accepted: true, feedback: "" };
+            return new Response(
+                JSON.stringify({
+                    choices: [{
+                        message: {
+                            content: null,
+                            tool_calls: [{
+                                function: {
+                                    name: toolName,
+                                    arguments: JSON.stringify(args),
+                                },
+                            }],
+                        },
+                    }],
+                }),
+            );
+        }) as unknown as typeof fetch;
+
+        const messages: string[] = [];
+        const orig = console.error;
+        console.error = (...args: unknown[]) => messages.push(args.join(" "));
+
+        try {
+            const exitCode = await runInDir(diff, tempDir, {
+                apiKey: "test-key",
+                fetchFn,
+            });
+
+            assertEquals(exitCode, 0);
+            // The cross-file pass never ran: no placement logging at all.
+            assert(
+                !messages.some((m) => m.includes("cross-file group")),
+                "cross-file pass ran despite duplicate_extractor_cross_file: false",
+            );
             assertEquals(await Deno.readTextFile(`${tempDir}/a.ts`), sourceA);
             assertEquals(await Deno.readTextFile(`${tempDir}/b.ts`), sourceB);
         } finally {

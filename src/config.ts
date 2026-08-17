@@ -7,6 +7,10 @@ export interface Config {
     duplicate_extractor_min_lines: number;
     duplicate_extractor_max_lines: number;
     duplicate_extractor_retries: number;
+    /** Preferred shared dir name for cross-file duplicate extraction. */
+    duplicate_extractor_shared_dir: string;
+    /** Whether duplicate extraction may extract across files. */
+    duplicate_extractor_cross_file: boolean;
     provider: string;
     model: string;
     enabled_refactors: string[];
@@ -38,6 +42,8 @@ const DEFAULTS: Config = {
     duplicate_extractor_min_lines: 2,
     duplicate_extractor_max_lines: 12,
     duplicate_extractor_retries: 2,
+    duplicate_extractor_shared_dir: "common",
+    duplicate_extractor_cross_file: true,
     provider: "moonshot",
     model: "kimi-k2.5",
     enabled_refactors: [],
@@ -62,6 +68,14 @@ function readYamlFile(filePath: string): Record<string, unknown> | null {
 
 function isStringArray(val: unknown): val is string[] {
     return Array.isArray(val) && val.every((v) => typeof v === "string");
+}
+
+/**
+ * A shared dir name must be a single safe path segment: it is joined
+ * onto the common ancestor directory verbatim.
+ */
+function isSharedDirName(val: string): boolean {
+    return /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(val);
 }
 
 function mergeConfig(
@@ -91,6 +105,17 @@ function mergeConfig(
         if (typeof override.duplicate_extractor_retries === "number") {
             result.duplicate_extractor_retries =
                 override.duplicate_extractor_retries;
+        }
+        if (
+            typeof override.duplicate_extractor_shared_dir === "string" &&
+            isSharedDirName(override.duplicate_extractor_shared_dir)
+        ) {
+            result.duplicate_extractor_shared_dir =
+                override.duplicate_extractor_shared_dir;
+        }
+        if (typeof override.duplicate_extractor_cross_file === "boolean") {
+            result.duplicate_extractor_cross_file =
+                override.duplicate_extractor_cross_file;
         }
         if (typeof override.provider === "string") {
             result.provider = override.provider;

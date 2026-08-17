@@ -69,19 +69,21 @@ Local overrides take precedence over committed settings.
 
 ### Options
 
-| Option                          | Default       | Description                                                                               |
-| ------------------------------- | ------------- | ----------------------------------------------------------------------------------------- |
-| `max_function_lines`            | `75`          | Line count threshold above which the function splitter will consider splitting a function |
-| `function_splitter_retries`     | `2`           | Number of LLM retry attempts when naming a helper function                                |
-| `function_matcher_retries`      | `2`           | Number of LLM retry attempts when a function matcher edit fails verification              |
-| `duplicate_extractor_min_lines` | `2`           | Minimum line span for a code block to be considered for duplicate extraction              |
-| `duplicate_extractor_max_lines` | `12`          | Maximum line span for a code block to be considered for duplicate extraction              |
-| `duplicate_extractor_retries`   | `2`           | Number of LLM retry attempts when a duplicate extraction fails verification               |
-| `provider`                      | `"moonshot"`  | LLM provider (currently only `"moonshot"`)                                                |
-| `model`                         | `"kimi-k2.5"` | LLM model name to use                                                                     |
-| `enabled_refactors`             | `[]`          | If non-empty, only these refactors will run                                               |
-| `disabled_refactors`            | `[]`          | These refactors will be skipped                                                           |
-| `verbose`                       | `false`       | Print detailed log output for each refactor                                               |
+| Option                           | Default       | Description                                                                               |
+| -------------------------------- | ------------- | ----------------------------------------------------------------------------------------- |
+| `max_function_lines`             | `75`          | Line count threshold above which the function splitter will consider splitting a function |
+| `function_splitter_retries`      | `2`           | Number of LLM retry attempts when naming a helper function                                |
+| `function_matcher_retries`       | `2`           | Number of LLM retry attempts when a function matcher edit fails verification              |
+| `duplicate_extractor_min_lines`  | `2`           | Minimum line span for a code block to be considered for duplicate extraction              |
+| `duplicate_extractor_max_lines`  | `12`          | Maximum line span for a code block to be considered for duplicate extraction              |
+| `duplicate_extractor_retries`    | `2`           | Number of LLM retry attempts when a duplicate extraction fails verification               |
+| `duplicate_extractor_shared_dir` | `"common"`    | Preferred directory name for cross-file extraction's shared helper modules                |
+| `duplicate_extractor_cross_file` | `true`        | Whether duplicate extraction may extract across files                                     |
+| `provider`                       | `"moonshot"`  | LLM provider (currently only `"moonshot"`)                                                |
+| `model`                          | `"kimi-k2.5"` | LLM model name to use                                                                     |
+| `enabled_refactors`              | `[]`          | If non-empty, only these refactors will run                                               |
+| `disabled_refactors`             | `[]`          | These refactors will be skipped                                                           |
+| `verbose`                        | `false`       | Print detailed log output for each refactor                                               |
 
 ### Example `dripbird.yml`
 
@@ -374,11 +376,24 @@ class Account {
 }
 ```
 
+**Scope (across files):** structurally identical blocks in two or more diff files
+are extracted into a helper in a new shared module, and every involved file imports
+it. Placement is deterministic and cycle-safe by construction: the module lives
+under the deepest common ancestor of the involved files, in the first usable
+directory from `duplicate_extractor_shared_dir` (default `common`), then `shared`,
+`lib`, `util`. Each duplicate group gets its own module named after the helper. The
+shared module is a leaf — imports the blocks need move into it verbatim (packages)
+or re-anchored (relative), and a group is skipped when an import cannot be proven to
+still resolve or the placement could create a cycle. Every proposal must also pass a
+multi-file type check (no new diagnostics vs. the pre-change baseline) before the
+LLM review. Blocks using `this` stay single-file only.
+
 Skipped when:
 
 - Fewer than two duplicate blocks overlap the diff
 - The LLM rejects the group as not actually duplicated
 - A block uses `this` but the blocks are not all instance methods of one class
+- A cross-file group's imports cannot move, or no usable shared directory exists
 - No LLM API key is configured (`MOONSHOT_API_KEY`)
 
 ## Architecture
