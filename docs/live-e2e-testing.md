@@ -171,6 +171,12 @@ than `b/`:
 - **`duplicate_extractor/basic`:** live runs tend to make the helper _return_ the
   formatted entry (caller logs it), while `b/` has the helper log internally. Both
   preserve behavior.
+- **`duplicate_extractor/cross_file`:** live runs may **chain extractions** — pass 1
+  extracts the inner duplicate pair into one helper, then re-detection finds the
+  remaining 2-line duplicate (the `const` + call) and extracts it into a second
+  wrapper that calls the first. Behavior is preserved and everything type-checks,
+  but the callers keep an import of the first helper they no longer use directly.
+  Also expect the helper names/shapes to differ from `b/` (LLM-chosen).
 
 If a run diverges in a way that breaks the Stage 2 intent criteria (or fails Stage
 1), that's a real regression — investigate before moving on.
