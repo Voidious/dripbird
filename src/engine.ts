@@ -1,4 +1,5 @@
 import type { ChangedRange } from "./diff.ts";
+import type { TypeChecker } from "./type_checker.ts";
 
 export interface RefactorResult {
     changed: boolean;
@@ -49,6 +50,12 @@ export interface CrossFileContext {
      * not part of the diff.
      */
     readFile: (path: string) => Promise<string | null>;
+    /**
+     * Shared semantic checker for deterministic gates on multi-file
+     * proposals (baseline-diffed, like the single-file extractors).
+     * Optional: without it, refactors fall back to parse checks + review.
+     */
+    typeChecker?: TypeChecker;
 }
 
 export interface CrossFileResult {

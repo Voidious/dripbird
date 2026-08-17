@@ -40,14 +40,17 @@ function toPosix(path: string): string {
 export function commonAncestorDir(files: string[]): string {
     if (files.length === 0) return "/";
     const dirs = files.map((f) => toPosix(f).split("/").slice(0, -1));
-    let common = dirs[0];
-    for (const dir of dirs.slice(1)) {
+    // reduce (not a for-of over dirs.slice(1)): V8 attributes a for-of body
+    // one range whose count is total iterations, which deno's complement
+    // arithmetic turns into a phantom "never-empty loop" miss when some
+    // calls iterate several times.
+    const common = dirs.reduce((acc, dir) => {
         let i = 0;
-        while (i < common.length && i < dir.length && common[i] === dir[i]) {
+        while (i < acc.length && i < dir.length && acc[i] === dir[i]) {
             i++;
         }
-        common = common.slice(0, i);
-    }
+        return acc.slice(0, i);
+    });
     return common.join("/") || "/";
 }
 

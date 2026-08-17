@@ -14,6 +14,7 @@ import { createFunctionMatcher } from "./refactors/function_matcher.ts";
 import { createDuplicateExtractor } from "./refactors/duplicate_extractor.ts";
 import { createCrossFileDuplicateExtractor } from "./refactors/duplicate_extractor_cross.ts";
 import { TypeCheckerImpl } from "./type_checker.ts";
+import type { TypeChecker } from "./type_checker.ts";
 import type { LLMOptions } from "./llm.ts";
 
 export async function readStream(
@@ -127,6 +128,7 @@ export async function runCrossFilePass(
     config: Config,
     log: (msg: string) => void,
     printConfigOnce: () => void,
+    typeChecker?: TypeChecker,
 ): Promise<boolean> {
     if (crossFileRefactors.length === 0 || files.length === 0) return false;
 
@@ -146,6 +148,7 @@ export async function runCrossFilePass(
             baseDir,
             log: config.verbose ? log : undefined,
             readFile: (p: string) => Deno.readTextFile(p).catch(() => null),
+            typeChecker,
         });
         if (!result.changed) continue;
         for (const [file, source] of result.modified) {
@@ -232,7 +235,7 @@ export async function runInDir(
         });
         namedCrossFileRefactors.push({
             name: "duplicate_extractor",
-            refactor: createCrossFileDuplicateExtractor(config),
+            refactor: createCrossFileDuplicateExtractor(config, llm),
         });
     }
 
@@ -263,6 +266,7 @@ export async function runInDir(
         config,
         log,
         printConfigOnce,
+        typeChecker,
     ) || anyChanged;
 
     const fileResults: FileResult[] = [];

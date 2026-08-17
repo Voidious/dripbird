@@ -1,17 +1,20 @@
 // deno-lint-ignore-file no-explicit-any
 /**
- * Cross-file support for the duplicate extractor (0.3.3, in progress).
+ * Cross-file support for the duplicate extractor (0.3.3).
  *
- * This module sees every file in the diff at once and detects duplicate
- * blocks that live in DIFFERENT files. Such groups are extracted into a
- * shared module placed under the deepest common ancestor of the involved
- * files — see PLANS/DRIPBIRD_033_CROSS_FILE_DUPLICATE_EXTRACTOR.md for the
- * placement and cycle-safety design.
+ * This module sees every file in the diff at once and extracts duplicate
+ * blocks that live in DIFFERENT files into a shared module placed under
+ * the deepest common ancestor of the involved files — see
+ * PLANS/DRIPBIRD_033_CROSS_FILE_DUPLICATE_EXTRACTOR.md for the placement
+ * and cycle-safety design.
  *
- * Current stage: detection + placement gating. Groups are found, their
- * placement is resolved, and their imports are proven movable — all before
- * any LLM call. The extraction itself (LLM-generated helper + call sites,
- * rewriting, review) lands in the next piece.
+ * Pipeline per group (mirrors the single-file extractor):
+ * detect (fingerprint) -> placement gating (deterministic, pre-LLM) ->
+ * LLM verify -> LLM generate helper + call sites (with the leaf-import
+ * constraint and per-file provenance) -> parse checks -> LLM review ->
+ * apply. Accepted groups rewrite their files (import + call sites) and
+ * create the shared module; detection then re-runs on the updated
+ * sources, exactly like the single-file re-detection loop.
  */
 import type { ChangedRange } from "../diff.ts";
 import type { Config } from "../config.ts";
@@ -21,20 +24,32 @@ import type {
     CrossFileResult,
     FileChangeset,
 } from "../engine.ts";
+import type {
+    CrossFileReviewCallSite,
+    DuplicateVerifyResult,
+    ExtractionResult,
+    LLMClient,
+    ReviewResult,
+} from "../llm.ts";
 import {
+    applyTextEdit,
     collectSequences,
+    detectBaseIndent,
+    normalizeCallSiteIndent,
     selectNonOverlapping,
     type SeqInfo,
     usesThis,
 } from "./duplicate_extractor.ts";
-import { collectFileLevelBindings } from "./function_splitter.ts";
+import { collectFileLevelBindings, JS_TS_KEYWORDS } from "./function_splitter.ts";
 import {
     checkImportMovable,
     collectUsedImportBindings,
     commonAncestorDir,
     pickSharedDir,
+    relativeSpecifier,
 } from "./duplicate_extractor_placement.ts";
 import { collectImportEdges } from "./function_matcher_imports.ts";
+import type { TypeChecker } from "../type_checker.ts";
 import { parse } from "recast";
 import * as babelParser from "@babel/parser";
 
@@ -45,6 +60,8 @@ import * as babelParser from "@babel/parser";
  */
 const SHARED_DIR_CANDIDATES = ["common", "shared", "lib", "util"];
 
+const IDENTIFIER_RE = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
+
 /** A duplicate block tagged with the file it was found in. */
 export interface CrossFileBlock extends SeqInfo {
     file: string;
@@ -53,6 +70,12 @@ export interface CrossFileBlock extends SeqInfo {
 export interface CrossFileGroup {
     fingerprint: string;
     blocks: CrossFileBlock[];
+}
+
+/** One import the shared module must carry for the helper to work. */
+interface HelperImport {
+    /** Import statement for the shared module (rewritten specifier). */
+    line: string;
 }
 
 function parseSource(source: string): any {
@@ -73,6 +96,11 @@ function parseBare(source: string): any {
         sourceType: "module",
         plugins: ["typescript", "jsx"],
     });
+}
+
+/** Join path pieces, collapsing any doubled slash from a "/" root. */
+function joinPath(a: string, b: string): string {
+    return `${a}/${b}`.replace(/\/\//g, "/");
 }
 
 /**
@@ -110,22 +138,74 @@ export function insertImport(
         return null;
     }
 
-    let insertLine = 0; // 1-based; 0 means "before everything"
+    return insertImportAtLine(
+        source,
+        lastImportEndLine(ast),
+        specifier,
+        imported,
+        local,
+    );
+}
+
+/** Line number (1-based) just past the last top-level import, else 0. */
+function lastImportEndLine(ast: any): number {
+    let insertLine = 0;
     for (const stmt of ast.program.body) {
         if (stmt.type !== "ImportDeclaration") break;
         insertLine = stmt.loc.end.line;
     }
+    return insertLine;
+}
 
+/**
+ * First line (0-based index) of real code: skips leading blank lines,
+ * line comments, block comments, and a shebang. An import inserted above
+ * them would strand file-scoped directives like `// deno-lint-ignore-file`.
+ */
+function firstCodeLineIndex(lines: string[]): number {
+    let inBlockComment = false;
+    for (let i = 0; i < lines.length; i++) {
+        const text = lines[i].trim();
+        if (inBlockComment) {
+            if (text.includes("*/")) inBlockComment = false;
+        } else if (text === "" || text.startsWith("//") || text.startsWith("#!")) {
+            continue;
+        } else if (text.startsWith("/*")) {
+            if (!text.includes("*/")) inBlockComment = true;
+        } else {
+            return i;
+        }
+    }
+    return lines.length;
+}
+
+/**
+ * Splice an import statement after `insertLine` (1-based; 0 = before the
+ * first code line, keeping any leading comments above the import). Text
+ * edits in function bodies never move a file's top-of-file imports, so
+ * callers that already hold the file's AST can pass the line directly
+ * instead of re-parsing mid-rewrite.
+ */
+function insertImportAtLine(
+    source: string,
+    insertLine: number,
+    specifier: string,
+    imported: string,
+    local: string,
+): string {
     const aliased = local === imported ? imported : `${imported} as ${local}`;
     const statement = `import { ${aliased} } from "${specifier}";`;
     const lines = source.split("\n");
-    return [...lines.slice(0, insertLine), statement, ...lines.slice(insertLine)]
-        .join("\n");
-}
-
-/** Join path pieces, collapsing any doubled slash from a "/" root. */
-function joinPath(a: string, b: string): string {
-    return `${a}/${b}`.replace(/\/\//g, "/");
+    // A file's first import is separated from the code below it by a blank
+    // line; an import joining existing imports sits directly after them.
+    const at = insertLine === 0 ? firstCodeLineIndex(lines) : insertLine;
+    const separator = insertLine === 0 && lines[at]?.trim() !== "" ? [""] : [];
+    return [
+        ...lines.slice(0, at),
+        statement,
+        ...separator,
+        ...lines.slice(at),
+    ].join("\n");
 }
 
 /**
@@ -363,40 +443,536 @@ export function findCrossFileDuplicateGroups(
     return groups;
 }
 
+/** A finished, reviewed extraction ready to apply. */
+interface GroupExtraction {
+    /** Shared module path relative to baseDir. */
+    moduleRel: string;
+    moduleContent: string;
+    /** Rewritten sources for the involved files. */
+    fileEdits: Map<string, string>;
+    description: string;
+}
+
 /**
- * Cross-file duplicate extraction. Detection and placement gating are wired
- * end to end; the LLM extraction pipeline (helper + call-site generation,
- * rewriting, review) lands in the next piece. Until then the refactor is a
- * no-op that reports what it found under verbose logging.
+ * Compute the import statements the shared module needs so the helper can
+ * reference the module-level names the blocks used. Names resolve per file;
+ * the FIRST binding wins when several files bind the same import target
+ * under the same local name, but a local name that resolves to two
+ * DIFFERENT imports is a semantic conflict and rejects the group (returns
+ * null). Unmovable imports also reject (should not happen post-gating).
+ */
+async function collectHelperImports(
+    blocks: CrossFileBlock[],
+    sources: Map<string, string>,
+    baseDir: string,
+    sharedDirAbs: string,
+    readFile: (path: string) => Promise<string | null>,
+): Promise<HelperImport[] | null> {
+    const placeholderModule = joinPath(sharedDirAbs, "_.ts");
+
+    // localName -> dedup key (shape:specifier:importedName)
+    const byLocal = new Map<string, string>();
+    const imports = new Map<string, HelperImport>();
+
+    const perFile = new Map<string, CrossFileBlock[]>();
+    for (const block of blocks) {
+        const list = perFile.get(block.file);
+        if (list) list.push(block);
+        else perFile.set(block.file, [block]);
+    }
+
+    for (const [file, fileBlocks] of perFile) {
+        const ast = parseBare(sources.get(file)!);
+
+        const used = new Set<string>();
+        for (const block of fileBlocks) {
+            for (const name of collectUsedImportBindings(block.statements, ast)) {
+                used.add(name);
+            }
+        }
+        if (used.size === 0) continue;
+
+        for (const edge of collectImportEdges(ast)) {
+            const moved = await checkImportMovable(
+                edge.specifier,
+                `${baseDir}/${file}`,
+                placeholderModule,
+                readFile,
+            );
+            if (moved === null) continue; // unmovable edge: not one the blocks need
+
+            const bindings: Array<{
+                local: string;
+                key: string;
+                line: string;
+            }> = [];
+            for (const [imported, local] of edge.named) {
+                if (!used.has(local)) continue;
+                bindings.push({
+                    local,
+                    key: `named:${moved.specifier}:${imported}`,
+                    line: local === imported
+                        ? `import { ${imported} } from "${moved.specifier}";`
+                        : `import { ${imported} as ${local} } from "${moved.specifier}";`,
+                });
+            }
+            if (edge.namespaceBinding && used.has(edge.namespaceBinding)) {
+                bindings.push({
+                    local: edge.namespaceBinding,
+                    key: `namespace:${moved.specifier}`,
+                    line:
+                        `import * as ${edge.namespaceBinding} from "${moved.specifier}";`,
+                });
+            }
+            if (edge.defaultBinding && used.has(edge.defaultBinding)) {
+                bindings.push({
+                    local: edge.defaultBinding,
+                    key: `default:${moved.specifier}`,
+                    line:
+                        `import ${edge.defaultBinding} from "${moved.specifier}";`,
+                });
+            }
+
+            for (const { local, key, line } of bindings) {
+                const existingKey = byLocal.get(local);
+                if (existingKey !== undefined && existingKey !== key) {
+                    return null; // same name, different import: ambiguous
+                }
+                byLocal.set(local, key);
+                if (!imports.has(key)) imports.set(key, { line });
+            }
+        }
+    }
+
+    return [...imports.values()];
+}
+
+/**
+ * Run the full LLM pipeline for one gated group: verify, generate (with
+ * retries), parse-check, review. Returns the finished extraction, or null
+ * when the group is rejected or every attempt fails.
+ */
+async function extractGroup(
+    gated: GatedGroup,
+    llm: LLMClient,
+    config: Config,
+    sources: Map<string, string>,
+    created: Map<string, string>,
+    baseDir: string,
+    readFile: (path: string) => Promise<string | null>,
+    pathExists: (path: string) => Promise<boolean>,
+    relOf: (abs: string) => string,
+    astOf: (file: string) => any,
+    typeChecker: TypeChecker | undefined,
+    log: (msg: string) => void,
+): Promise<GroupExtraction | null> {
+    const group = gated.group;
+    const blocks = group.blocks;
+    const label = `${blocks.length} blocks in ${
+        [...new Set(blocks.map((b) => b.file))].join(", ")
+    }`;
+
+    const verifyResult: DuplicateVerifyResult = await llm
+        .verifyCrossFileDuplicateMatch(
+            blocks.map((b) => ({ file: b.file, source: b.source })),
+        );
+    if (!verifyResult.isMatch) {
+        log(
+            `dripbird: duplicate_extractor: LLM rejected cross-file group (${label}): ${verifyResult.reason}`,
+        );
+        return null;
+    }
+
+    let remaining = blocks;
+    if (verifyResult.excludeIndices.length > 0) {
+        const exclude = new Set(verifyResult.excludeIndices);
+        remaining = blocks.filter((_, i) => !exclude.has(i));
+        const remainingFiles = new Set(remaining.map((b) => b.file));
+        if (remainingFiles.size < 2) {
+            log(
+                `dripbird: duplicate_extractor: too few files after exclusion (${label})`,
+            );
+            return null;
+        }
+    }
+
+    const helperImports = await collectHelperImports(
+        remaining,
+        sources,
+        baseDir,
+        gated.sharedDirAbs,
+        readFile,
+    );
+    if (helperImports === null) {
+        log(
+            `dripbird: duplicate_extractor: skipped cross-file group (${label}): conflicting or unmovable imports for the shared module`,
+        );
+        return null;
+    }
+
+    const forbiddenNames = new Set<string>(JS_TS_KEYWORDS);
+    for (const file of new Set(remaining.map((b) => b.file))) {
+        for (const name of collectFileLevelBindings(astOf(file))) {
+            forbiddenNames.add(name);
+        }
+    }
+
+    const relSharedDir = relOf(gated.sharedDirAbs);
+    const maxAttempts = config.duplicate_extractor_retries + 1;
+    let lastFeedback = "";
+
+    // Baseline diagnostics for the type-check gate: every diff file's
+    // current source plus modules created by earlier passes, virtualized
+    // at their real absolute paths so imports between them resolve. Null
+    // when no multi-file checker is wired (gate becomes a no-op).
+    let baselineKeys: Set<string> | null = null;
+    if (typeChecker?.initForFiles) {
+        const baseline = [...sources].map(([file, source]) => ({
+            path: `${baseDir}/${file}`,
+            source,
+        }));
+        for (const [rel, content] of created) {
+            baseline.push({ path: `${baseDir}/${rel}`, source: content });
+        }
+        await typeChecker.initForFiles(baseline);
+        baselineKeys = new Set(
+            typeChecker.getSemanticErrors().map((e) =>
+                `${e.file}:${e.code}:${e.message}`
+            ),
+        );
+    }
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        const extraction: ExtractionResult = await llm
+            .generateCrossFileExtraction(
+                remaining.map((b) => ({ file: b.file, source: b.source })),
+                {
+                    modulePath: `${relSharedDir}/<helperName>.ts`,
+                    imports: helperImports.map((i) => i.line),
+                },
+                [...forbiddenNames].sort(),
+                lastFeedback || undefined,
+            );
+
+        if (extraction.callSites.length !== remaining.length) {
+            lastFeedback =
+                `Expected exactly ${remaining.length} call sites but got ${extraction.callSites.length}. Try again.`;
+            continue;
+        }
+
+        const helperName = extraction.helperName;
+        if (!IDENTIFIER_RE.test(helperName) || JS_TS_KEYWORDS.has(helperName)) {
+            lastFeedback =
+                `"${helperName}" is not a usable helper name. Choose a descriptive camelCase identifier.`;
+            continue;
+        }
+
+        const moduleAbs = await resolveModulePath(
+            gated.sharedDirAbs,
+            helperName,
+            pathExists,
+        );
+        const moduleRel = relOf(moduleAbs);
+
+        // Pair each block with its generated call site, then group by file
+        // (keeping block order, which is ascending per file).
+        const pairs = remaining.map((b, i) => ({
+            block: b,
+            cs: extraction.callSites[i],
+        }));
+        const byFile = new Map<string, typeof pairs>();
+        for (const pair of pairs) {
+            const list = byFile.get(pair.block.file);
+            if (list) list.push(pair);
+            else byFile.set(pair.block.file, [pair]);
+        }
+
+        const fileEdits = new Map<string, string>();
+        const reviewSites: CrossFileReviewCallSite[] = [];
+        let failed = false;
+
+        for (const [file, filePairs] of byFile) {
+            const current = sources.get(file)!;
+            const ast = astOf(file);
+            const binding = resolveLocalBinding(helperName, ast);
+            const specifier = relativeSpecifier(
+                `${baseDir}/${file}`,
+                moduleAbs,
+            );
+            const importLine = binding === helperName
+                ? `import { ${helperName} } from "${specifier}";`
+                : `import { ${helperName} as ${binding} } from "${specifier}";`;
+
+            let proposed = current;
+            // Apply edits bottom-up so earlier line numbers stay valid.
+            const sorted = [...filePairs].sort((a, b) =>
+                b.block.startLine - a.block.startLine
+            );
+            for (const { block, cs } of sorted) {
+                let callSite = cs;
+                if (binding !== helperName) {
+                    // Identifiers contain no regex metacharacters after the
+                    // validation above, so this substitution is safe.
+                    callSite = callSite.replaceAll(
+                        `${helperName}(`,
+                        `${binding}(`,
+                    );
+                }
+                callSite = normalizeCallSiteIndent(
+                    callSite,
+                    detectBaseIndent(block.source),
+                );
+                proposed = applyTextEdit(
+                    proposed,
+                    block.startLine,
+                    block.endLine,
+                    callSite,
+                );
+                reviewSites.push({
+                    file,
+                    location:
+                        `lines ${block.startLine}-${block.endLine} (${block.scope})`,
+                    importLine,
+                    originalBlock: block.source,
+                    replacement: callSite,
+                });
+            }
+
+            const withImport = insertImportAtLine(
+                proposed,
+                lastImportEndLine(ast),
+                specifier,
+                helperName,
+                binding,
+            );
+            try {
+                parseBare(withImport);
+            } catch {
+                lastFeedback =
+                    `The rewrite of ${file} did not parse. Regenerate the call sites as valid TypeScript.`;
+                failed = true;
+                break;
+            }
+            fileEdits.set(file, withImport);
+        }
+        if (failed) {
+            log(
+                `dripbird: duplicate_extractor: rewrite failed (attempt ${
+                    attempt + 1
+                }/${maxAttempts})`,
+            );
+            continue;
+        }
+
+        const helperFn = extraction.helperFunction.trim().replace(
+            /^export\s+/,
+            "",
+        );
+        const moduleContent = (helperImports.length > 0
+            ? `${
+                helperImports.map((i) => i.line).join("\n")
+            }\n\n`
+            : "") + `export ${helperFn}\n`;
+        try {
+            parseBare(moduleContent);
+        } catch {
+            lastFeedback =
+                "The helper function did not produce a valid module. Regenerate it as a single top-level function declaration.";
+            log(
+                `dripbird: duplicate_extractor: shared module didn't parse (attempt ${
+                    attempt + 1
+                }/${maxAttempts})`,
+            );
+            continue;
+        }
+
+        // Deterministic type-check gate, mirroring the single-file
+        // extractor: baseline the current multi-file state (all diff files
+        // + modules created by earlier passes, virtualized at their real
+        // paths so cross-imports resolve), then reject any attempt whose
+        // diagnostics contain a (file, code, message) pair the baseline
+        // lacks. Catches build-breakers the parse checks and the LLM
+        // review both miss (e.g. a call site left referencing a binding
+        // that now lives inside the helper).
+        if (typeChecker?.initForFiles && baselineKeys !== null) {
+            const proposal = [...sources].map(([file, source]) => ({
+                path: `${baseDir}/${file}`,
+                source: fileEdits.get(file) ?? source,
+            }));
+            for (const [rel, content] of created) {
+                proposal.push({ path: `${baseDir}/${rel}`, source: content });
+            }
+            proposal.push({ path: moduleAbs, source: moduleContent });
+            await typeChecker.initForFiles(proposal);
+            const newErrors = typeChecker.getSemanticErrors().filter((e) =>
+                !baselineKeys.has(`${e.file}:${e.code}:${e.message}`)
+            );
+            if (newErrors.length > 0) {
+                lastFeedback =
+                    "The previous extraction introduced type errors. Keep the helper and call sites, but fix these so every file still type-checks:\n" +
+                    newErrors.map((e) =>
+                        `${e.file} line ${e.line}: [TS${e.code}] ${e.message}`
+                    ).join("\n");
+                log(
+                    `dripbird: duplicate_extractor: type-check failed (attempt ${
+                        attempt + 1
+                    }/${maxAttempts}): ${
+                        newErrors.map((e) => `[TS${e.code}] ${e.message}`)
+                            .join("; ")
+                    }`,
+                );
+                continue;
+            }
+        }
+
+        const description =
+            `extracted cross-file duplicate code into ${moduleRel} (replacing ${remaining.length} blocks across ${byFile.size} files)`;
+        const reviewResult: ReviewResult = await llm.reviewCrossFileChange(
+            description,
+            {
+                modulePath: moduleRel,
+                helperModule: moduleContent,
+                callSites: reviewSites,
+            },
+        );
+        if (!reviewResult.accepted) {
+            log(
+                `dripbird: duplicate_extractor: LLM review rejected (attempt ${
+                    attempt + 1
+                }/${maxAttempts}): ${reviewResult.feedback}`,
+            );
+            lastFeedback = reviewResult.feedback;
+            continue;
+        }
+
+        return { moduleRel, moduleContent, fileEdits, description };
+    }
+
+    return null;
+}
+
+/**
+ * Cross-file duplicate extraction: detect duplicate blocks across diff
+ * files, place their helper in a shared module under the common ancestor,
+ * and rewrite every involved file to import and call it. Cycle safety comes
+ * from placement (see duplicate_extractor_placement.ts): the shared module
+ * is a leaf whose imports were proven movable, and it is always a NEW file.
  */
 export function createCrossFileDuplicateExtractor(
     config: Config,
+    llm: LLMClient,
 ): CrossFileRefactor {
     return async (
         files: FileChangeset[],
         context: CrossFileContext,
     ): Promise<CrossFileResult> => {
         const log = context.log ?? (() => {});
+        const baseDir = context.baseDir;
+        // Every path handed to relOf is built from `${baseDir}/${file}`
+        // pieces (the shared directory is derived from those paths), so the
+        // prefix is guaranteed.
+        const relOf = (abs: string) => abs.slice(baseDir.length + 1);
 
-        const groups = findCrossFileDuplicateGroups(
+        const sources = new Map(files.map((f) => [f.file, f.source]));
+        const originalSources = new Map(sources);
+        const rangesByFile = new Map(files.map((f) => [f.file, f.ranges]));
+        const created = new Map<string, string>();
+        const descriptions: string[] = [];
+        const doneFingerprints = new Set<string>();
+
+        // ASTs are re-parsed whenever a file's source changes.
+        const astCache = new Map<string, any>();
+        const astOf = (file: string): any => {
+            let ast = astCache.get(file);
+            if (ast === undefined) {
+                ast = parseBare(sources.get(file)!);
+                astCache.set(file, ast);
+            }
+            return ast;
+        };
+
+        // Modules created by earlier passes exist only in memory until the
+        // refactor returns, so every read must consult `created` first —
+        // otherwise gating false-rejects imports of those modules as
+        // unmovable (they "don't resolve" on disk yet).
+        const readFile = async (abs: string): Promise<string | null> => {
+            if (abs.startsWith(`${baseDir}/`)) {
+                const rel = abs.slice(baseDir.length + 1);
+                const content = created.get(rel);
+                if (content !== undefined) return content;
+            }
+            return await context.readFile(abs);
+        };
+
+        const pathExists = async (abs: string) => (await readFile(abs)) !== null;
+
+        const initialGroups = findCrossFileDuplicateGroups(
             files,
             config.duplicate_extractor_min_lines,
             config.duplicate_extractor_max_lines,
         );
 
-        await gateCrossFileGroups(
-            groups,
-            files,
-            context.baseDir,
-            context.readFile,
-            log,
-        );
+        // One group per pass; re-detect after each accepted extraction so
+        // coordinates stay exact (mirrors the single-file re-detection
+        // loop). Rejected fingerprints are never retried within a run.
+        for (let pass = 0; pass < initialGroups.length + 1; pass++) {
+            const changesets: FileChangeset[] = [...sources].map((
+                [file, source],
+            ) => ({ file, source, ranges: rangesByFile.get(file)! }));
+
+            const groups = findCrossFileDuplicateGroups(
+                changesets,
+                config.duplicate_extractor_min_lines,
+                config.duplicate_extractor_max_lines,
+            ).filter((g) => !doneFingerprints.has(g.fingerprint));
+            if (groups.length === 0) break;
+
+            const gated = await gateCrossFileGroups(
+                groups,
+                changesets,
+                baseDir,
+                readFile,
+                log,
+            );
+            if (gated.length === 0) break;
+
+            const target = gated[0];
+            doneFingerprints.add(target.group.fingerprint);
+
+            const outcome = await extractGroup(
+                target,
+                llm,
+                config,
+                sources,
+                created,
+                baseDir,
+                readFile,
+                pathExists,
+                relOf,
+                astOf,
+                context.typeChecker,
+                log,
+            );
+            if (outcome === null) continue;
+
+            for (const [file, source] of outcome.fileEdits) {
+                sources.set(file, source);
+                astCache.delete(file);
+            }
+            created.set(outcome.moduleRel, outcome.moduleContent);
+            descriptions.push(outcome.description);
+        }
+
+        const modified = new Map<string, string>();
+        for (const [file, source] of sources) {
+            if (source !== originalSources.get(file)) modified.set(file, source);
+        }
 
         return {
-            modified: new Map(),
-            created: new Map(),
-            changed: false,
-            description: "",
+            modified,
+            created,
+            changed: descriptions.length > 0,
+            description: descriptions.join("\n"),
         };
     };
 }

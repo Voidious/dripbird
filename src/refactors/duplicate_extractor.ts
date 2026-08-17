@@ -331,7 +331,7 @@ export function selectNonOverlapping(seqs: SeqInfo[]): SeqInfo[] {
     return result;
 }
 
-function detectBaseIndent(text: string): string {
+export function detectBaseIndent(text: string): string {
     let minLen = Infinity;
     let result = "";
     for (const line of text.split("\n")) {
@@ -348,7 +348,7 @@ function detectBaseIndent(text: string): string {
     return result;
 }
 
-function normalizeCallSiteIndent(
+export function normalizeCallSiteIndent(
     callSite: string,
     targetIndent: string,
 ): string {
@@ -364,7 +364,7 @@ function normalizeCallSiteIndent(
     }).join("\n");
 }
 
-function applyTextEdit(
+export function applyTextEdit(
     source: string,
     startLine: number,
     endLine: number,

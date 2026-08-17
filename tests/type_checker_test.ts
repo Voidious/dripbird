@@ -427,3 +427,50 @@ Deno.test("parseTypeString throws for invalid type string", () => {
     }
     assert(threw);
 });
+
+Deno.test("TypeCheckerImpl initForFiles resolves imports between virtual files", async () => {
+    const checker = new TypeCheckerImpl();
+    await checker.initForFiles([
+        {
+            path: "/base/a.ts",
+            source: 'import { shout } from "./b";\nshout("x");\n',
+        },
+        {
+            path: "/base/b.ts",
+            source: "export function shout(x: string) { missingRef(); }\n",
+        },
+    ]);
+    const errors = checker.getSemanticErrors();
+    assertEquals(errors.length, 1);
+    assertEquals(errors[0].file, "/base/b.ts");
+    assert(errors[0].message.includes("missingRef"));
+    checker.dispose();
+});
+
+Deno.test("TypeCheckerImpl initForFiles reports per-file diagnostics", async () => {
+    const checker = new TypeCheckerImpl();
+    await checker.initForFiles([
+        { path: "/base/ok.ts", source: "export const fine = 1;\n" },
+        {
+            path: "/base/bad.ts",
+            source: 'const n: number = "not a number";\n',
+        },
+    ]);
+    const errors = checker.getSemanticErrors();
+    assertEquals(errors.length, 1);
+    assertEquals(errors[0].file, "/base/bad.ts");
+    checker.dispose();
+});
+
+Deno.test("TypeCheckerImpl initForFiles reports unresolvable imports", async () => {
+    const checker = new TypeCheckerImpl();
+    await checker.initForFiles([
+        {
+            path: "/base/lonely.ts",
+            source: 'import { nope } from "./missing";\nnope();\n',
+        },
+    ]);
+    const errors = checker.getSemanticErrors();
+    assert(errors.some((e) => e.code === 2307));
+    checker.dispose();
+});

@@ -11,7 +11,12 @@ import {
     getParamName,
     getTailCode,
 } from "../../src/refactors/function_splitter.ts";
-import type { LLMClient } from "../../src/llm.ts";
+import type {
+    DuplicateVerifyResult,
+    ExtractionResult,
+    LLMClient,
+    ReviewResult,
+} from "../../src/llm.ts";
 import { type TypeChecker, TypeCheckerImpl } from "../../src/type_checker.ts";
 import { parse } from "recast";
 import * as babelParser from "@babel/parser";
@@ -41,6 +46,18 @@ function mockLLM(name: string): LLMClient {
         // deno-lint-ignore require-await
         async generateExtraction() {
             return { helperName: "", helperFunction: "", callSites: [] };
+        },
+        // deno-lint-ignore require-await
+        async verifyCrossFileDuplicateMatch() {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateCrossFileExtraction() {
+            return { helperName: "", helperFunction: "", callSites: [] };
+        },
+        // deno-lint-ignore require-await
+        async reviewCrossFileChange() {
+            return { accepted: true, feedback: "" };
         },
     };
 }
@@ -245,6 +262,18 @@ Deno.test("function splitter passes free variables as params", async () => {
         async generateExtraction() {
             return { helperName: "", helperFunction: "", callSites: [] };
         },
+        // deno-lint-ignore require-await
+        async verifyCrossFileDuplicateMatch(): Promise<DuplicateVerifyResult> {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateCrossFileExtraction(): Promise<ExtractionResult> {
+            return { helperName: "", helperFunction: "", callSites: [] };
+        },
+        // deno-lint-ignore require-await
+        async reviewCrossFileChange(): Promise<ReviewResult> {
+            return { accepted: true, feedback: "" };
+        },
     };
     const splitter = createFunctionSplitter(
         defaultConfig,
@@ -293,6 +322,18 @@ Deno.test("function splitter retries on LLM failure", async () => {
         async generateExtraction() {
             return { helperName: "", helperFunction: "", callSites: [] };
         },
+        // deno-lint-ignore require-await
+        async verifyCrossFileDuplicateMatch(): Promise<DuplicateVerifyResult> {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateCrossFileExtraction(): Promise<ExtractionResult> {
+            return { helperName: "", helperFunction: "", callSites: [] };
+        },
+        // deno-lint-ignore require-await
+        async reviewCrossFileChange(): Promise<ReviewResult> {
+            return { accepted: true, feedback: "" };
+        },
     };
     const splitter = createFunctionSplitter(
         defaultConfig,
@@ -339,6 +380,18 @@ Deno.test("function splitter gives up after retries exhausted", async () => {
         // deno-lint-ignore require-await
         async generateExtraction() {
             return { helperName: "", helperFunction: "", callSites: [] };
+        },
+        // deno-lint-ignore require-await
+        async verifyCrossFileDuplicateMatch(): Promise<DuplicateVerifyResult> {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateCrossFileExtraction(): Promise<ExtractionResult> {
+            return { helperName: "", helperFunction: "", callSites: [] };
+        },
+        // deno-lint-ignore require-await
+        async reviewCrossFileChange(): Promise<ReviewResult> {
+            return { accepted: true, feedback: "" };
         },
     };
     const splitter = createFunctionSplitter(
@@ -729,6 +782,18 @@ Deno.test("function splitter selects split point with fewest params", async () =
         // deno-lint-ignore require-await
         async generateExtraction() {
             return { helperName: "", helperFunction: "", callSites: [] };
+        },
+        // deno-lint-ignore require-await
+        async verifyCrossFileDuplicateMatch(): Promise<DuplicateVerifyResult> {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateCrossFileExtraction(): Promise<ExtractionResult> {
+            return { helperName: "", helperFunction: "", callSites: [] };
+        },
+        // deno-lint-ignore require-await
+        async reviewCrossFileChange(): Promise<ReviewResult> {
+            return { accepted: true, feedback: "" };
         },
     };
     const splitter = createFunctionSplitter(
@@ -1146,6 +1211,18 @@ Deno.test("function splitter with multiple candidates processes all", async () =
         async generateExtraction() {
             return { helperName: "", helperFunction: "", callSites: [] };
         },
+        // deno-lint-ignore require-await
+        async verifyCrossFileDuplicateMatch(): Promise<DuplicateVerifyResult> {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateCrossFileExtraction(): Promise<ExtractionResult> {
+            return { helperName: "", helperFunction: "", callSites: [] };
+        },
+        // deno-lint-ignore require-await
+        async reviewCrossFileChange(): Promise<ReviewResult> {
+            return { accepted: true, feedback: "" };
+        },
     };
     const splitter = createFunctionSplitter(
         defaultConfig,
@@ -1291,6 +1368,18 @@ Deno.test("function splitter rejects forbidden name and retries", async () => {
         async generateExtraction() {
             return { helperName: "", helperFunction: "", callSites: [] };
         },
+        // deno-lint-ignore require-await
+        async verifyCrossFileDuplicateMatch(): Promise<DuplicateVerifyResult> {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateCrossFileExtraction(): Promise<ExtractionResult> {
+            return { helperName: "", helperFunction: "", callSites: [] };
+        },
+        // deno-lint-ignore require-await
+        async reviewCrossFileChange(): Promise<ReviewResult> {
+            return { accepted: true, feedback: "" };
+        },
     };
     const splitter = createFunctionSplitter(
         defaultConfig,
@@ -1341,6 +1430,18 @@ Deno.test("function splitter rejects keyword name and retries", async () => {
         async generateExtraction() {
             return { helperName: "", helperFunction: "", callSites: [] };
         },
+        // deno-lint-ignore require-await
+        async verifyCrossFileDuplicateMatch(): Promise<DuplicateVerifyResult> {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateCrossFileExtraction(): Promise<ExtractionResult> {
+            return { helperName: "", helperFunction: "", callSites: [] };
+        },
+        // deno-lint-ignore require-await
+        async reviewCrossFileChange(): Promise<ReviewResult> {
+            return { accepted: true, feedback: "" };
+        },
     };
     const splitter = createFunctionSplitter(
         defaultConfig,
@@ -1389,6 +1490,18 @@ Deno.test("function splitter rejects function-scoped variable name", async () =>
         async generateExtraction() {
             return { helperName: "", helperFunction: "", callSites: [] };
         },
+        // deno-lint-ignore require-await
+        async verifyCrossFileDuplicateMatch(): Promise<DuplicateVerifyResult> {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateCrossFileExtraction(): Promise<ExtractionResult> {
+            return { helperName: "", helperFunction: "", callSites: [] };
+        },
+        // deno-lint-ignore require-await
+        async reviewCrossFileChange(): Promise<ReviewResult> {
+            return { accepted: true, feedback: "" };
+        },
     };
     const splitter = createFunctionSplitter(
         defaultConfig,
@@ -1436,6 +1549,18 @@ Deno.test("function splitter gives up when all attempts return forbidden names",
         async generateExtraction() {
             return { helperName: "", helperFunction: "", callSites: [] };
         },
+        // deno-lint-ignore require-await
+        async verifyCrossFileDuplicateMatch(): Promise<DuplicateVerifyResult> {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateCrossFileExtraction(): Promise<ExtractionResult> {
+            return { helperName: "", helperFunction: "", callSites: [] };
+        },
+        // deno-lint-ignore require-await
+        async reviewCrossFileChange(): Promise<ReviewResult> {
+            return { accepted: true, feedback: "" };
+        },
     };
     const splitter = createFunctionSplitter(
         defaultConfig,
@@ -1476,6 +1601,18 @@ Deno.test("function splitter passes forbidden names to LLM", async () => {
         // deno-lint-ignore require-await
         async generateExtraction() {
             return { helperName: "", helperFunction: "", callSites: [] };
+        },
+        // deno-lint-ignore require-await
+        async verifyCrossFileDuplicateMatch(): Promise<DuplicateVerifyResult> {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateCrossFileExtraction(): Promise<ExtractionResult> {
+            return { helperName: "", helperFunction: "", callSites: [] };
+        },
+        // deno-lint-ignore require-await
+        async reviewCrossFileChange(): Promise<ReviewResult> {
+            return { accepted: true, feedback: "" };
         },
     };
     const splitter = createFunctionSplitter(
@@ -1568,6 +1705,18 @@ Deno.test("function splitter with low coverage restricts split to diff", async (
         // deno-lint-ignore require-await
         async generateExtraction() {
             return { helperName: "", helperFunction: "", callSites: [] };
+        },
+        // deno-lint-ignore require-await
+        async verifyCrossFileDuplicateMatch(): Promise<DuplicateVerifyResult> {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateCrossFileExtraction(): Promise<ExtractionResult> {
+            return { helperName: "", helperFunction: "", callSites: [] };
+        },
+        // deno-lint-ignore require-await
+        async reviewCrossFileChange(): Promise<ReviewResult> {
+            return { accepted: true, feedback: "" };
         },
     };
     const splitter = createFunctionSplitter(
@@ -1677,6 +1826,18 @@ Deno.test("function splitter recursively splits helper when over limit", async (
         async generateExtraction() {
             return { helperName: "", helperFunction: "", callSites: [] };
         },
+        // deno-lint-ignore require-await
+        async verifyCrossFileDuplicateMatch(): Promise<DuplicateVerifyResult> {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateCrossFileExtraction(): Promise<ExtractionResult> {
+            return { helperName: "", helperFunction: "", callSites: [] };
+        },
+        // deno-lint-ignore require-await
+        async reviewCrossFileChange(): Promise<ReviewResult> {
+            return { accepted: true, feedback: "" };
+        },
     };
     const splitter = createFunctionSplitter(
         { ...defaultConfig, max_function_lines: 15 },
@@ -1725,6 +1886,18 @@ Deno.test("function splitter prefers split point that avoids re-split", async ()
         async generateExtraction() {
             return { helperName: "", helperFunction: "", callSites: [] };
         },
+        // deno-lint-ignore require-await
+        async verifyCrossFileDuplicateMatch(): Promise<DuplicateVerifyResult> {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateCrossFileExtraction(): Promise<ExtractionResult> {
+            return { helperName: "", helperFunction: "", callSites: [] };
+        },
+        // deno-lint-ignore require-await
+        async reviewCrossFileChange(): Promise<ReviewResult> {
+            return { accepted: true, feedback: "" };
+        },
     };
     const splitter = createFunctionSplitter(
         { ...defaultConfig, max_function_lines: 10 },
@@ -1771,6 +1944,18 @@ Deno.test("function splitter respects depth limit for very long functions", asyn
         // deno-lint-ignore require-await
         async generateExtraction() {
             return { helperName: "", helperFunction: "", callSites: [] };
+        },
+        // deno-lint-ignore require-await
+        async verifyCrossFileDuplicateMatch(): Promise<DuplicateVerifyResult> {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateCrossFileExtraction(): Promise<ExtractionResult> {
+            return { helperName: "", helperFunction: "", callSites: [] };
+        },
+        // deno-lint-ignore require-await
+        async reviewCrossFileChange(): Promise<ReviewResult> {
+            return { accepted: true, feedback: "" };
         },
     };
     const splitter = createFunctionSplitter(
@@ -1826,6 +2011,18 @@ Deno.test("function splitter does not re-split original when only modification i
         async generateExtraction() {
             return { helperName: "", helperFunction: "", callSites: [] };
         },
+        // deno-lint-ignore require-await
+        async verifyCrossFileDuplicateMatch(): Promise<DuplicateVerifyResult> {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateCrossFileExtraction(): Promise<ExtractionResult> {
+            return { helperName: "", helperFunction: "", callSites: [] };
+        },
+        // deno-lint-ignore require-await
+        async reviewCrossFileChange(): Promise<ReviewResult> {
+            return { accepted: true, feedback: "" };
+        },
     };
     const splitter = createFunctionSplitter(
         defaultConfig,
@@ -1872,6 +2069,18 @@ Deno.test("function splitter re-splits original with high coverage when still ov
         // deno-lint-ignore require-await
         async generateExtraction() {
             return { helperName: "", helperFunction: "", callSites: [] };
+        },
+        // deno-lint-ignore require-await
+        async verifyCrossFileDuplicateMatch(): Promise<DuplicateVerifyResult> {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateCrossFileExtraction(): Promise<ExtractionResult> {
+            return { helperName: "", helperFunction: "", callSites: [] };
+        },
+        // deno-lint-ignore require-await
+        async reviewCrossFileChange(): Promise<ReviewResult> {
+            return { accepted: true, feedback: "" };
         },
     };
     const splitter = createFunctionSplitter(
@@ -1922,6 +2131,18 @@ ${lines.join("\n")}
         // deno-lint-ignore require-await
         async generateExtraction() {
             return { helperName: "", helperFunction: "", callSites: [] };
+        },
+        // deno-lint-ignore require-await
+        async verifyCrossFileDuplicateMatch(): Promise<DuplicateVerifyResult> {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateCrossFileExtraction(): Promise<ExtractionResult> {
+            return { helperName: "", helperFunction: "", callSites: [] };
+        },
+        // deno-lint-ignore require-await
+        async reviewCrossFileChange(): Promise<ReviewResult> {
+            return { accepted: true, feedback: "" };
         },
     };
     const splitter = createFunctionSplitter(
@@ -2100,6 +2321,18 @@ Deno.test("function splitter preserves types through recursive splits", async ()
         // deno-lint-ignore require-await
         async generateExtraction() {
             return { helperName: "", helperFunction: "", callSites: [] };
+        },
+        // deno-lint-ignore require-await
+        async verifyCrossFileDuplicateMatch(): Promise<DuplicateVerifyResult> {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateCrossFileExtraction(): Promise<ExtractionResult> {
+            return { helperName: "", helperFunction: "", callSites: [] };
+        },
+        // deno-lint-ignore require-await
+        async reviewCrossFileChange(): Promise<ReviewResult> {
+            return { accepted: true, feedback: "" };
         },
     };
     const splitter = createFunctionSplitter(

@@ -1025,14 +1025,31 @@ Deno.test(
             " function greetCustomer(name) {",
         ].join("\n");
 
-        // LLM mock is never called: cross-file detection is pure AST, and
-        // neither file has a WITHIN-file duplicate for the per-file
-        // extractor to chew on.
+        // The cross-file pass verifies the detected group; the mock LLM
+        // rejects the match, so no changes are applied and exit stays 0.
         // deno-lint-ignore require-await
-        const fetchFn = (async () =>
-            new Response(
-                JSON.stringify({ choices: [] }),
-            )) as unknown as typeof fetch;
+        const fetchFn = (async (_url: unknown, init?: RequestInit) => {
+            const body = JSON.parse(String(init!.body));
+            const toolName = body.tools?.[0]?.function?.name ?? "";
+            const args = toolName === "evaluate_duplicates"
+                ? { is_match: false, exclude_indices: [], reason: "no" }
+                : { accepted: true, feedback: "" };
+            return new Response(
+                JSON.stringify({
+                    choices: [{
+                        message: {
+                            content: null,
+                            tool_calls: [{
+                                function: {
+                                    name: toolName,
+                                    arguments: JSON.stringify(args),
+                                },
+                            }],
+                        },
+                    }],
+                }),
+            );
+        }) as unknown as typeof fetch;
 
         const messages: string[] = [];
         const orig = console.error;
