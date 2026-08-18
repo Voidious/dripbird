@@ -172,11 +172,14 @@ than `b/`:
   formatted entry (caller logs it), while `b/` has the helper log internally. Both
   preserve behavior.
 - **`duplicate_extractor/cross_file`:** live runs may **chain extractions** — pass 1
-  extracts the inner duplicate pair into one helper, then re-detection finds the
-  remaining 2-line duplicate (the `const` + call) and extracts it into a second
-  wrapper that calls the first. Behavior is preserved and everything type-checks,
-  but the callers keep an import of the first helper they no longer use directly.
-  Also expect the helper names/shapes to differ from `b/` (LLM-chosen).
+  extracts the inner duplicate pair into one helper, and a later duplicate that
+  builds on it (calls it, then does its own work) extracts into a second helper
+  that calls the first. Two guards shape the chaining: re-detected residue whose
+  blocks only forward to a run-created helper (the leftover `const` + call) is
+  skipped — no trivial proxy wrappers — and each rewrite prunes imports it
+  orphaned, so callers never keep imports of helpers they only reach through a
+  newer wrapper. Also expect the helper names/shapes to differ from `b/`
+  (LLM-chosen).
 
 If a run diverges in a way that breaks the Stage 2 intent criteria (or fails Stage
 1), that's a real regression — investigate before moving on.

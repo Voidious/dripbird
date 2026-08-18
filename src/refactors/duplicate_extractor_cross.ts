@@ -15,6 +15,12 @@
  * apply. Accepted groups rewrite their files (import + call sites) and
  * create the shared module; detection then re-runs on the updated
  * sources, exactly like the single-file re-detection loop.
+ *
+ * Chaining guards: re-detection skips residue groups whose blocks only
+ * forward to a helper extracted earlier in the same run (a second
+ * extraction would just wrap the first helper in a trivial proxy), and
+ * each rewrite prunes imports it orphaned so callers never keep stale
+ * imports of helpers they no longer call directly.
  */
 import type { ChangedRange } from "../diff.ts";
 import type { Config } from "../config.ts";
@@ -35,6 +41,7 @@ import {
     applyTextEdit,
     collectSequences,
     detectBaseIndent,
+    isPropertyContext,
     normalizeCallSiteIndent,
     selectNonOverlapping,
     type SeqInfo,
@@ -48,9 +55,12 @@ import {
     pickSharedDir,
     relativeSpecifier,
 } from "./duplicate_extractor_placement.ts";
-import { collectImportEdges } from "./function_matcher_imports.ts";
+import {
+    collectImportEdges,
+    resolveRelativePath,
+} from "./function_matcher_imports.ts";
 import type { TypeChecker } from "../type_checker.ts";
-import { parse } from "recast";
+import { parse, visit } from "recast";
 import * as babelParser from "@babel/parser";
 
 /**
@@ -219,6 +229,136 @@ function insertImportAtLine(
 }
 
 /**
+ * Identifiers `ast` references, by name: every Identifier except import
+ * clauses (not references), property keys, and label names (see
+ * isPropertyContext). Name-based, so a shadowed local with an import's
+ * name keeps the import alive — over-approximation only ever means a
+ * harmless unused import survives a prune.
+ */
+function collectReferencedNames(ast: any): Set<string> {
+    const names = new Set<string>();
+    visit(ast, {
+        visitImportDeclaration() {
+            return false; // import clause identifiers are not references
+        },
+        visitIdentifier(path: any) {
+            const parent = path.parent?.node;
+            const node = path.node;
+            if (parent && isPropertyContext(parent, node)) {
+                this.traverse(path);
+                return;
+            }
+            names.add(node.name);
+            this.traverse(path);
+        },
+    });
+    return names;
+}
+
+/** Whether one import specifier's local binding is in `names`. */
+function specifierBound(spec: any, names: Set<string>): boolean {
+    return names.has(spec.local.name);
+}
+
+/**
+ * Rebuild a single-line import statement keeping only `kept` specifiers
+ * (`import def, * as ns, { a, b as c } from "..."` in canonical order,
+ * preserving `import type` / inline `type` markers). Returns null for
+ * shapes the printer cannot reproduce faithfully (string-literal named
+ * imports), leaving the original statement untouched instead.
+ */
+function rebuildImportStatement(stmt: any, kept: any[]): string | null {
+    const parts: string[] = [];
+    const defaultSpec = kept.find((s: any) => s.type === "ImportDefaultSpecifier");
+    if (defaultSpec) parts.push(defaultSpec.local.name);
+    const nsSpec = kept.find((s: any) => s.type === "ImportNamespaceSpecifier");
+    if (nsSpec) parts.push(`* as ${nsSpec.local.name}`);
+    const named = kept.filter((s: any) => s.type === "ImportSpecifier");
+    if (named.length > 0) {
+        const clauses: string[] = [];
+        for (const spec of named) {
+            if (spec.imported?.type !== "Identifier") return null;
+            const local = spec.local.name;
+            const alias = spec.imported.name === local
+                ? local
+                : `${spec.imported.name} as ${local}`;
+            clauses.push(spec.importKind === "type" ? `type ${alias}` : alias);
+        }
+        parts.push(`{ ${clauses.join(", ")} }`);
+    }
+
+    const keyword = stmt.importKind === "type" ? "import type" : "import";
+    return `${keyword} ${parts.join(", ")} from "${stmt.source.value}";`;
+}
+
+/**
+ * Remove imports a rewrite orphaned: bindings the file referenced BEFORE
+ * the rewrite but no longer references AFTER it. Imports that were
+ * already unused before the rewrite are left alone (not this refactor's
+ * doing), and side-effect imports never bind a name to lose. Partially
+ * orphaned statements are rebuilt without the dead clauses; a statement
+ * whose every clause died is removed along with a doubled blank line.
+ * Unparseable input returns `after` unchanged (the caller's parse check
+ * governs rewrites, not this hygiene pass).
+ */
+export function pruneOrphanedImports(before: string, after: string): string {
+    let beforeAst: any, afterAst: any;
+    try {
+        beforeAst = parseSource(before);
+        afterAst = parseSource(after);
+    } catch {
+        return after;
+    }
+
+    const beforeNames = collectReferencedNames(beforeAst);
+    const afterNames = collectReferencedNames(afterAst);
+
+    const lines = after.split("\n");
+    const edits: Array<{ startLine: number; endLine: number; text: string[] }> = [];
+
+    for (const stmt of afterAst.program.body) {
+        if (stmt.type !== "ImportDeclaration") continue;
+        const specifiers = stmt.specifiers;
+        if (specifiers.length === 0) continue; // side-effect import
+
+        const kept = specifiers.filter((s: any) =>
+            !(specifierBound(s, beforeNames) && !specifierBound(s, afterNames))
+        );
+        if (kept.length === specifiers.length) continue;
+
+        const startLine = stmt.loc.start.line;
+        let endLine = stmt.loc.end.line;
+        if (kept.length === 0) {
+            // Swallow one following blank line so removal cannot leave a
+            // doubled gap (only when a gap actually doubles).
+            if (
+                lines[endLine]?.trim() === "" &&
+                (startLine === 1 || lines[startLine - 2]?.trim() === "")
+            ) {
+                endLine++;
+            }
+            edits.push({ startLine, endLine, text: [] });
+            continue;
+        }
+        const rebuilt = rebuildImportStatement(stmt, kept);
+        if (rebuilt === null) continue;
+        edits.push({ startLine, endLine, text: [rebuilt] });
+    }
+
+    if (edits.length === 0) return after;
+
+    edits.sort((a, b) => b.startLine - a.startLine);
+    for (const edit of edits) {
+        lines.splice(
+            edit.startLine - 1,
+            edit.endLine - edit.startLine + 1,
+            ...edit.text,
+        );
+    }
+    return lines.join("\n");
+}
+
+/**
  * Absolute path for the shared module: `${dir}/${helperName}.ts`, with a
  * numeric suffix when that path already exists (per-group modules — we
  * never merge into an existing file).
@@ -263,6 +403,104 @@ function importBindingSpecifiers(fileAst: any): Map<string, string> {
 }
 
 /**
+ * Local bindings through which `file` imports a module created earlier in
+ * the same run (`createdModules` holds baseDir-relative module paths).
+ * Resolution mirrors the movability gate: the first candidate that reads
+ * (created modules read from memory) decides, and only then do we ask
+ * whether that target was run-created.
+ */
+async function runCreatedHelperBindings(
+    file: string,
+    fileAst: any,
+    baseDir: string,
+    createdModules: Set<string>,
+    readFile: (path: string) => Promise<string | null>,
+): Promise<Set<string>> {
+    const bindings = new Set<string>();
+    if (createdModules.size === 0) return bindings;
+
+    for (const edge of collectImportEdges(fileAst)) {
+        for (
+            const candidate of resolveRelativePath(
+                `${baseDir}/${file}`,
+                edge.specifier,
+            )
+        ) {
+            if ((await readFile(candidate)) === null) continue;
+            if (
+                candidate.startsWith(`${baseDir}/`) &&
+                createdModules.has(candidate.slice(baseDir.length + 1))
+            ) {
+                for (const local of edge.named.values()) {
+                    bindings.add(local);
+                }
+                if (edge.namespaceBinding) {
+                    bindings.add(edge.namespaceBinding);
+                }
+                if (edge.defaultBinding) bindings.add(edge.defaultBinding);
+            }
+            break;
+        }
+    }
+    return bindings;
+}
+
+/**
+ * A statement that only FORWARDS: a local declaration, or a (possibly
+ * awaited) call to a helper extracted earlier this run. Anything else —
+ * returns, conditionals, calls to anything else — is real work.
+ */
+function isForwardingStatement(stmt: any, helperBindings: Set<string>): boolean {
+    if (stmt.type === "VariableDeclaration") return true;
+    if (stmt.type !== "ExpressionStatement") return false;
+    let expr = stmt.expression;
+    if (expr?.type === "AwaitExpression") expr = expr.argument;
+    return expr?.type === "CallExpression" &&
+        expr.callee?.type === "Identifier" &&
+        helperBindings.has(expr.callee.name);
+}
+
+/**
+ * Whether a group is residue from an earlier extraction this run: every
+ * block only declares locals and calls a helper module this run already
+ * created. Extracting such blocks again would only produce a trivial
+ * proxy function wrapping that helper, so the group is skipped and the
+ * call sites stay where they are.
+ */
+async function isTrivialProxyGroup(
+    group: CrossFileGroup,
+    fileByName: Map<string, FileChangeset>,
+    astFor: (changeset: FileChangeset) => any,
+    baseDir: string,
+    createdModules: Set<string>,
+    readFile: (path: string) => Promise<string | null>,
+): Promise<boolean> {
+    const bindingsByFile = new Map<string, Set<string>>();
+    for (const fileName of new Set(group.blocks.map((b) => b.file))) {
+        bindingsByFile.set(
+            fileName,
+            await runCreatedHelperBindings(
+                fileName,
+                astFor(fileByName.get(fileName)!),
+                baseDir,
+                createdModules,
+                readFile,
+            ),
+        );
+    }
+
+    return group.blocks.every((block) => {
+        const helperBindings = bindingsByFile.get(block.file)!;
+        if (helperBindings.size === 0 || block.statements.length === 0) {
+            return false;
+        }
+        return block.statements.every((stmt) =>
+            isForwardingStatement(stmt, helperBindings)
+        );
+    });
+}
+
+/**
  * A duplicate group proven placeable: every import its blocks reference can
  * move to the shared module, and the shared directory is resolved. The
  * module file path awaits the LLM-chosen helper name.
@@ -277,8 +515,11 @@ export interface GatedGroup {
  * Filter detected groups down to those whose placement is provably safe,
  * logging why the others are skipped. Gates, in order:
  *
- * 1. A usable shared directory exists under the common ancestor.
- * 2. Every import binding referenced by any block is movable: bare
+ * 1. Not a trivial proxy: the blocks must do something besides declare
+ *    locals and call helpers extracted earlier in the same run (residue
+ *    from a previous pass would only wrap that helper again).
+ * 2. A usable shared directory exists under the common ancestor.
+ * 3. Every import binding referenced by any block is movable: bare
  *    specifiers move verbatim; relative ones must resolve against the
  *    importing file (they are re-targeted from the shared module later).
  */
@@ -289,6 +530,7 @@ export async function gateCrossFileGroups(
     readFile: (path: string) => Promise<string | null>,
     log: (msg: string) => void,
     candidateDirs: string[] = SHARED_DIR_CANDIDATES,
+    createdModules: Set<string> = new Set(),
 ): Promise<GatedGroup[]> {
     // Files were parsed during detection with the same babel parser, so
     // parsing here cannot fail; a cache keeps the per-group loop cheap.
@@ -307,6 +549,22 @@ export async function gateCrossFileGroups(
     for (const group of groups) {
         const fileNames = [...new Set(group.blocks.map((b) => b.file))];
         const label = `${group.blocks.length} blocks in ${fileNames.join(", ")}`;
+
+        if (
+            await isTrivialProxyGroup(
+                group,
+                fileByName,
+                astFor,
+                baseDir,
+                createdModules,
+                readFile,
+            )
+        ) {
+            log(
+                `dripbird: duplicate_extractor: skipped cross-file group (${label}): blocks only forward to a helper extracted earlier this run`,
+            );
+            continue;
+        }
 
         const absFiles = fileNames.map((f) => `${baseDir}/${f}`);
         const ancestor = commonAncestorDir(absFiles);
@@ -749,12 +1007,15 @@ async function extractGroup(
                 });
             }
 
-            const withImport = insertImportAtLine(
-                proposed,
-                lastImportEndLine(ast),
-                specifier,
-                helperName,
-                binding,
+            const withImport = pruneOrphanedImports(
+                current,
+                insertImportAtLine(
+                    proposed,
+                    lastImportEndLine(ast),
+                    specifier,
+                    helperName,
+                    binding,
+                ),
             );
             try {
                 parseBare(withImport);
@@ -945,6 +1206,7 @@ export function createCrossFileDuplicateExtractor(
                 readFile,
                 log,
                 sharedDirCandidates(config),
+                new Set(created.keys()),
             );
             if (gated.length === 0) break;
 

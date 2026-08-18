@@ -8,9 +8,12 @@ import type {
 } from "../../src/llm.ts";
 import {
     createCrossFileDuplicateExtractor,
+    type CrossFileBlock,
+    type CrossFileGroup,
     findCrossFileDuplicateGroups,
     gateCrossFileGroups,
     insertImport,
+    pruneOrphanedImports,
     resolveLocalBinding,
     resolveModulePath,
     sharedDirCandidates,
@@ -66,6 +69,34 @@ const sourceB = [
     "    logger.log(entry);",
     "}",
 ].join("\n");
+
+/** Top-level statements of the (single) function in `source`. */
+// deno-lint-ignore no-explicit-any
+function parseStmts(source: string): any[] {
+    // deno-lint-ignore no-explicit-any
+    const ast: any = BABEL.parse(source, {
+        sourceType: "module",
+        plugins: ["typescript", "jsx"],
+    });
+    // deno-lint-ignore no-explicit-any
+    const fn: any = ast.program.body[0];
+    return fn.body.body;
+}
+
+/** A minimal block tag for hand-built groups (line data unused by gates). */
+// deno-lint-ignore no-explicit-any
+function blockIn(file: string, statements: any[]): CrossFileBlock {
+    return {
+        file,
+        statements,
+        startLine: 1,
+        endLine: 2,
+        source: "",
+        fingerprint: "fp",
+        scope: "alpha",
+        kind: "function",
+    };
+}
 
 Deno.test("findCrossFileDuplicateGroups groups blocks across files", () => {
     const groups = findCrossFileDuplicateGroups(
@@ -520,10 +551,11 @@ Deno.test("cross-file extractor moves imports into the shared module", async () 
             "",
         ].join("\n"),
     );
+    // The rewrite moved a.ts's only `log` usage into the shared module,
+    // so its now-orphaned import is pruned from the caller.
     assertEquals(
         result.modified.get("a.ts"),
         [
-            'import { log } from "./log";',
             'import { greetUser } from "./common/greetUser";',
             "",
             "function alpha(user) {",
@@ -853,6 +885,298 @@ Deno.test("resolveModulePath suffixes existing files", async () => {
     );
 });
 
+Deno.test("pruneOrphanedImports removes imports the rewrite orphaned", () => {
+    const before = [
+        'import { log } from "./log";',
+        'import { keep } from "./keep";',
+        "",
+        "function alpha(user) {",
+        "    log(user);",
+        "    keep(user);",
+        "}",
+    ].join("\n");
+    const after = [
+        'import { log } from "./log";',
+        'import { keep } from "./keep";',
+        "",
+        "function alpha(user) {",
+        "    helper(user);",
+        "    keep(user);",
+        "}",
+    ].join("\n");
+
+    assertEquals(
+        pruneOrphanedImports(before, after),
+        [
+            'import { keep } from "./keep";',
+            "",
+            "function alpha(user) {",
+            "    helper(user);",
+            "    keep(user);",
+            "}",
+        ].join("\n"),
+    );
+});
+
+Deno.test("pruneOrphanedImports swallows the blank a removed leading import doubles", () => {
+    const before = [
+        'import { log } from "./log";',
+        "",
+        "function alpha() {",
+        "    log(1);",
+        "}",
+    ].join("\n");
+    const after = [
+        'import { log } from "./log";',
+        "",
+        "function alpha() {",
+        "    helper(1);",
+        "}",
+    ].join("\n");
+
+    assertEquals(
+        pruneOrphanedImports(before, after),
+        [
+            "function alpha() {",
+            "    helper(1);",
+            "}",
+        ].join("\n"),
+    );
+});
+
+Deno.test("pruneOrphanedImports swallows a doubled gap between remaining statements", () => {
+    const before = [
+        'import { a } from "./a";',
+        "",
+        'import { b } from "./b";',
+        "",
+        "function alpha() {",
+        "    a(1);",
+        "    b(2);",
+        "}",
+    ].join("\n");
+    const after = [
+        'import { a } from "./a";',
+        "",
+        'import { b } from "./b";',
+        "",
+        "function alpha() {",
+        "    a(1);",
+        "    helper(2);",
+        "}",
+    ].join("\n");
+
+    assertEquals(
+        pruneOrphanedImports(before, after),
+        [
+            'import { a } from "./a";',
+            "",
+            "function alpha() {",
+            "    a(1);",
+            "    helper(2);",
+            "}",
+        ].join("\n"),
+    );
+});
+
+Deno.test("pruneOrphanedImports rebuilds partially orphaned named imports", () => {
+    const before = [
+        'import { log, deep as far, dead } from "./mix";',
+        "",
+        "function alpha(x) {",
+        "    log(x);",
+        "    far(x);",
+        "    dead(x);",
+        "}",
+    ].join("\n");
+    const after = [
+        'import { log, deep as far, dead } from "./mix";',
+        "",
+        "function alpha(x) {",
+        "    far(x);",
+        "}",
+    ].join("\n");
+
+    assertEquals(
+        pruneOrphanedImports(before, after),
+        [
+            'import { deep as far } from "./mix";',
+            "",
+            "function alpha(x) {",
+            "    far(x);",
+            "}",
+        ].join("\n"),
+    );
+});
+
+Deno.test("pruneOrphanedImports rebuilds default and namespace specifiers", () => {
+    const before = [
+        'import def, * as ns from "./m";',
+        'import sink, * as lines from "./n";',
+        "",
+        "function alpha() {",
+        "    def(0);",
+        "    lines(0);",
+        "    ns.a(1);",
+        "    sink(2);",
+        "}",
+    ].join("\n");
+    const after = [
+        'import def, * as ns from "./m";',
+        'import sink, * as lines from "./n";',
+        "",
+        "function alpha() {",
+        "    ns.a(1);",
+        "    sink(2);",
+        "}",
+    ].join("\n");
+    // def and lines were orphaned by the rewrite; ns and sink survive.
+
+    assertEquals(
+        pruneOrphanedImports(before, after),
+        [
+            'import * as ns from "./m";',
+            'import sink from "./n";',
+            "",
+            "function alpha() {",
+            "    ns.a(1);",
+            "    sink(2);",
+            "}",
+        ].join("\n"),
+    );
+});
+
+Deno.test("pruneOrphanedImports rebuilds type-only imports and clauses", () => {
+    const before = [
+        'import type { Gone, Stays } from "./types";',
+        'import { type Tag, value } from "./misc";',
+        "",
+        "function alpha(x: Gone & Stays & Tag) {",
+        "    return value(x);",
+        "}",
+    ].join("\n");
+    const after = [
+        'import type { Gone, Stays } from "./types";',
+        'import { type Tag, value } from "./misc";',
+        "",
+        "function alpha(x: Stays & Tag) {",
+        "    return helper(x);",
+        "}",
+    ].join("\n");
+    // `Gone` lost its type reference; `value` lost its call.
+
+    assertEquals(
+        pruneOrphanedImports(before, after),
+        [
+            'import type { Stays } from "./types";',
+            'import { type Tag } from "./misc";',
+            "",
+            "function alpha(x: Stays & Tag) {",
+            "    return helper(x);",
+            "}",
+        ].join("\n"),
+    );
+});
+
+Deno.test("pruneOrphanedImports keeps side-effect and pre-existing unused imports", () => {
+    const before = [
+        'import "./register";',
+        'import { dead } from "./dead";',
+        'import { log } from "./log";',
+        "",
+        "function alpha() {",
+        "    log(1);",
+        "}",
+    ].join("\n");
+    const after = [
+        'import "./register";',
+        'import { dead } from "./dead";',
+        'import { log } from "./log";',
+        "",
+        "function alpha() {",
+        "    helper(1);",
+        "}",
+    ].join("\n");
+
+    assertEquals(
+        pruneOrphanedImports(before, after),
+        [
+            'import "./register";',
+            'import { dead } from "./dead";',
+            "",
+            "function alpha() {",
+            "    helper(1);",
+            "}",
+        ].join("\n"),
+    );
+});
+
+Deno.test("pruneOrphanedImports counts shorthand usage but not property keys", () => {
+    const before = [
+        'import { log } from "./log";',
+        'import { key } from "./key";',
+        "",
+        "function alpha() {",
+        "    log(1);",
+        "    key(2);",
+        "}",
+    ].join("\n");
+    const after = [
+        'import { log } from "./log";',
+        'import { key } from "./key";',
+        "",
+        "function alpha() {",
+        "    const o = { log, key: 3 };",
+        "    return o;",
+        "}",
+    ].join("\n");
+    // `{ log }` (shorthand) keeps log alive; `key:` (property key) does
+    // not keep key alive.
+
+    assertEquals(
+        pruneOrphanedImports(before, after),
+        [
+            'import { log } from "./log";',
+            "",
+            "function alpha() {",
+            "    const o = { log, key: 3 };",
+            "    return o;",
+            "}",
+        ].join("\n"),
+    );
+});
+
+Deno.test("pruneOrphanedImports leaves string-literal named imports untouched", () => {
+    const before = [
+        'import { "a-b" as ab, gone } from "./x";',
+        "",
+        "function alpha() {",
+        "    ab(1);",
+        "    gone(2);",
+        "}",
+    ].join("\n");
+    const after = [
+        'import { "a-b" as ab, gone } from "./x";',
+        "",
+        "function alpha() {",
+        "    ab(1);",
+        "    helper(2);",
+        "}",
+    ].join("\n");
+    // The printer cannot faithfully rebuild a string-literal clause, so
+    // the whole statement stays (over-kept, never wrongly dropped).
+
+    assertEquals(pruneOrphanedImports(before, after), after);
+});
+
+Deno.test("pruneOrphanedImports returns after unchanged for unparseable input", () => {
+    const after = 'import { log } from "./log";\n\nfunction f() {}\n';
+    assertEquals(
+        pruneOrphanedImports("function not parseable {{{", after),
+        after,
+    );
+});
+
 Deno.test("gateCrossFileGroups resolves placement for movable groups", async () => {
     const groups = findCrossFileDuplicateGroups(
         filesOf([
@@ -1096,6 +1420,197 @@ Deno.test("gateCrossFileGroups honors custom candidate dirs", async () => {
 
     assertEquals(gated.length, 1);
     assertEquals(gated[0].sharedDirAbs, "/base/helpers");
+});
+
+Deno.test("gateCrossFileGroups skips residue that only forwards to a run-created helper", async () => {
+    // After an earlier pass extracted helperOne, re-detection can find the
+    // leftover `const` + call duplicated across files. Extracting that
+    // residue would only wrap helperOne in a trivial proxy, so the gate
+    // skips it before any LLM call.
+    const fn = [
+        "function alpha(x) {",
+        "    const v = prep(x);",
+        "    helperOne(v);",
+        "}",
+    ].join("\n");
+    const aSrc = [
+        'import { helperOne } from "./common/helperOne";',
+        "",
+        fn,
+    ].join("\n");
+    const files = filesOf([
+        { file: "a.ts", source: aSrc },
+        { file: "b.ts", source: aSrc.replace("alpha", "beta") },
+    ]);
+    const group: CrossFileGroup = {
+        fingerprint: "residue",
+        blocks: [
+            blockIn("a.ts", parseStmts(fn)),
+            blockIn("b.ts", parseStmts(fn)),
+        ],
+    };
+    const readFile = (p: string) =>
+        Promise.resolve(
+            p === "/base/common/helperOne.ts"
+                ? "export function helperOne() {}\n"
+                : null,
+        );
+
+    const logs: string[] = [];
+    const gated = await gateCrossFileGroups(
+        [group],
+        files,
+        "/base",
+        readFile,
+        (msg) => logs.push(msg),
+        ["common"],
+        new Set(["common/helperOne.ts"]),
+    );
+
+    assertEquals(gated, []);
+    assert(logs.some((m) => m.includes("only forward")));
+});
+
+Deno.test("gateCrossFileGroups skips awaited forwarding residue too", async () => {
+    const fn = [
+        "async function alpha(x) {",
+        "    const v = prep(x);",
+        "    await helperOne(v);",
+        "}",
+    ].join("\n");
+    const aSrc = [
+        'import { helperOne } from "./common/helperOne";',
+        "",
+        fn,
+    ].join("\n");
+    const files = filesOf([
+        { file: "a.ts", source: aSrc },
+        { file: "b.ts", source: aSrc.replace("alpha", "beta") },
+    ]);
+    const group: CrossFileGroup = {
+        fingerprint: "residue-await",
+        blocks: [
+            blockIn("a.ts", parseStmts(fn)),
+            blockIn("b.ts", parseStmts(fn)),
+        ],
+    };
+
+    const logs: string[] = [];
+    const gated = await gateCrossFileGroups(
+        [group],
+        files,
+        "/base",
+        (p: string) =>
+            Promise.resolve(
+                p === "/base/common/helperOne.ts"
+                    ? "export function helperOne() {}\n"
+                    : null,
+            ),
+        (msg) => logs.push(msg),
+        ["common"],
+        new Set(["common/helperOne.ts"]),
+    );
+
+    assertEquals(gated, []);
+    assert(logs.some((m) => m.includes("only forward")));
+});
+
+Deno.test("gateCrossFileGroups keeps forwarding blocks that do real work", async () => {
+    // The blocks call a run-created helper, but the trailing console.log
+    // is work of their own — a second helper here is not a trivial proxy.
+    // helperOne's module exists on disk but was NOT created by this run,
+    // which alone must not disqualify the group either.
+    const fn = [
+        "function alpha(x) {",
+        "    const v = prep(x);",
+        "    helperOne(v);",
+        "    console.log(v);",
+        "}",
+    ].join("\n");
+    const aSrc = [
+        'import { helperOne } from "./common/helperOne";',
+        "",
+        fn,
+    ].join("\n");
+    const files = filesOf([
+        { file: "a.ts", source: aSrc },
+        { file: "b.ts", source: aSrc.replace("alpha", "beta") },
+    ]);
+    const group: CrossFileGroup = {
+        fingerprint: "residue-work",
+        blocks: [
+            blockIn("a.ts", parseStmts(fn)),
+            blockIn("b.ts", parseStmts(fn)),
+        ],
+    };
+    const readFile = (p: string) =>
+        Promise.resolve(
+            p === "/base/common/helperOne.ts"
+                ? "export function helperOne() {}\n"
+                : null,
+        );
+
+    const logs: string[] = [];
+    const gated = await gateCrossFileGroups(
+        [group],
+        files,
+        "/base",
+        readFile,
+        (msg) => logs.push(msg),
+        ["common"],
+        new Set(["common/unrelated.ts"]),
+    );
+
+    assertEquals(gated.length, 1);
+    assert(!logs.some((m) => m.includes("only forward")));
+});
+
+Deno.test("gateCrossFileGroups collects namespace and default run-created bindings", async () => {
+    // Namespace/member calls (`bundle.helperOne(v)`) are not forwarding,
+    // and a block with no statements never counts as residue — so this
+    // group gates normally even though every import resolves into a
+    // run-created module.
+    const aSrc = [
+        'import * as bundle from "./common/helperOne";',
+        'import fallback from "./common/helperTwo";',
+        "",
+        "function alpha(x) {",
+        "    bundle.helperOne(x);",
+        "}",
+    ].join("\n");
+    const files = filesOf([
+        { file: "a.ts", source: aSrc },
+        { file: "b.ts", source: aSrc.replace("alpha", "beta") },
+    ]);
+    const fnB = "function beta() {}";
+    const group: CrossFileGroup = {
+        fingerprint: "residue-ns",
+        blocks: [
+            blockIn("a.ts", parseStmts(aSrc.split("\n").slice(2).join("\n"))),
+            blockIn("b.ts", parseStmts(fnB)),
+        ],
+    };
+    const readFile = (p: string) =>
+        Promise.resolve(
+            p === "/base/common/helperOne.ts" ||
+                p === "/base/common/helperTwo.ts"
+                ? "export {};\n"
+                : null,
+        );
+
+    const logs: string[] = [];
+    const gated = await gateCrossFileGroups(
+        [group],
+        files,
+        "/base",
+        readFile,
+        (msg) => logs.push(msg),
+        ["common"],
+        new Set(["common/helperOne.ts", "common/helperTwo.ts"]),
+    );
+
+    assertEquals(gated.length, 1);
+    assert(!logs.some((m) => m.includes("only forward")));
 });
 
 Deno.test("cross-file extractor uses the configured shared dir", async () => {
@@ -1749,10 +2264,13 @@ Deno.test("cross-file extractor moves imports of modules created in the same run
             "",
         ].join("\n"),
     );
+    // Pass 2's rewrite replaces the last direct greetUser call sites in
+    // the callers, so their greetUser imports are pruned: the callers
+    // keep no stale imports of helpers they only reach through the new
+    // wrapper. (The wrapper module itself still imports greetUser.)
     assertEquals(
         result.modified.get("a.ts"),
         [
-            'import { greetUser } from "./common/greetUser";',
             'import { handleGreeting } from "./common/handleGreeting";',
             "",
             "function alpha(user: string) {",
@@ -1760,8 +2278,21 @@ Deno.test("cross-file extractor moves imports of modules created in the same run
             "}",
         ].join("\n"),
     );
+    assertEquals(
+        result.modified.get("b.ts"),
+        [
+            'import { handleGreeting } from "./common/handleGreeting";',
+            "",
+            "function greetCustomer(name: string) {",
+            "    return handleGreeting(name);",
+            "}",
+        ].join("\n"),
+    );
     assert(!logs.some((m) => m.includes("cannot move")));
     assert(!logs.some((m) => m.includes("type-check failed")));
+    // handleGreeting does real work after its greetUser call (the return
+    // statement), so the trivial-proxy guard must not have fired.
+    assert(!logs.some((m) => m.includes("only forward")));
 });
 
 Deno.test("cross-file extractor type-checks proposals across files", async () => {
@@ -1846,4 +2377,126 @@ Deno.test("cross-file extractor type-checks proposals across files", async () =>
         ].join("\n"),
     );
     assert(result.created.has("common/greetUser.ts"));
+});
+
+Deno.test("cross-file extractor skips trivial-proxy residue instead of wrapping the helper", async () => {
+    // Sample-shaped chained extraction: pass 1 extracts the
+    // `console.log` pair, and re-detection then finds the leftover
+    // `const stamp` + helper-call duplicated across both files. That
+    // residue only forwards to the run-created helper, so the gate skips
+    // it (a second extraction would produce a trivial proxy wrapper) and
+    // the run ends with the call sites left in place. Verify only
+    // accepts the clean log pair — the windows that include the `const`
+    // would strand its later uses, so the LLM refutes them.
+    const aSrc = [
+        "function logStartup(name) {",
+        "    const stamp = new Date().toISOString();",
+        "    console.log(`[${stamp}] starting ${name}`);",
+        "    console.log(`[${stamp}] ready`);",
+        "}",
+    ].join("\n");
+    const bSrc = [
+        "function logBoot(service) {",
+        "    const stamp = new Date().toISOString();",
+        "    console.log(`[${stamp}] starting ${service}`);",
+        "    console.log(`[${stamp}] ready`);",
+        "}",
+    ].join("\n");
+
+    let generateCalls = 0;
+    let verifyCalls = 0;
+    const llm: LLMClient = {
+        // deno-lint-ignore require-await
+        async nameFunction() {
+            return "mock";
+        },
+        // deno-lint-ignore require-await
+        async verifyFunctionMatch() {
+            return { isMatch: false, reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateCallReplacement() {
+            return "";
+        },
+        // deno-lint-ignore require-await
+        async reviewChange() {
+            return { accepted: true, feedback: "" };
+        },
+        // deno-lint-ignore require-await
+        async verifyDuplicateMatch() {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateExtraction() {
+            return { helperName: "", helperFunction: "", callSites: [] };
+        },
+        // deno-lint-ignore require-await
+        async verifyCrossFileDuplicateMatch(
+            blocks: Array<{ file: string; source: string }>,
+        ) {
+            verifyCalls++;
+            const isCleanPair = blocks.every((b) =>
+                b.source.includes("ready") && !b.source.includes("const")
+            );
+            return isCleanPair
+                ? { isMatch: true, excludeIndices: [], reason: "ok" }
+                : { isMatch: false, excludeIndices: [], reason: "not the pair" };
+        },
+        // deno-lint-ignore require-await
+        async generateCrossFileExtraction() {
+            generateCalls++;
+            return {
+                helperName: "logPair",
+                helperFunction:
+                    "function logPair(stamp, label) {\n    console.log(`[${stamp}] starting ${label}`);\n    console.log(`[${stamp}] ready`);\n}\n",
+                callSites: [
+                    "    logPair(stamp, name);\n",
+                    "    logPair(stamp, service);\n",
+                ],
+            };
+        },
+        // deno-lint-ignore require-await
+        async reviewCrossFileChange() {
+            return { accepted: true, feedback: "" };
+        },
+    };
+
+    const logs: string[] = [];
+    const result = await createCrossFileDuplicateExtractor(testConfig, llm)(
+        filesOf([
+            { file: "a.ts", source: aSrc },
+            { file: "b.ts", source: bSrc },
+        ]),
+        {
+            baseDir: "/base",
+            log: (msg) => logs.push(msg),
+            readFile: () => Promise.resolve(null),
+        },
+    );
+
+    assertEquals(generateCalls, 1);
+    assert(logs.some((m) => m.includes("only forward")));
+    assertEquals([...result.created.keys()], ["common/logPair.ts"]);
+    assertEquals(
+        result.modified.get("a.ts"),
+        [
+            'import { logPair } from "./common/logPair";',
+            "",
+            "function logStartup(name) {",
+            "    const stamp = new Date().toISOString();",
+            "    logPair(stamp, name);",
+            "}",
+        ].join("\n"),
+    );
+    assertEquals(
+        result.modified.get("b.ts"),
+        [
+            'import { logPair } from "./common/logPair";',
+            "",
+            "function logBoot(service) {",
+            "    const stamp = new Date().toISOString();",
+            "    logPair(stamp, service);",
+            "}",
+        ].join("\n"),
+    );
 });

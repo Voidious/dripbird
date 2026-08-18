@@ -386,7 +386,9 @@ shared module is a leaf — imports the blocks need move into it verbatim (packa
 or re-anchored (relative), and a group is skipped when an import cannot be proven to
 still resolve or the placement could create a cycle. Every proposal must also pass a
 multi-file type check (no new diagnostics vs. the pre-change baseline) before the
-LLM review. Blocks using `this` stay single-file only.
+LLM review. Blocks using `this` stay single-file only. After a rewrite, imports the
+file no longer references are pruned, so callers never keep stale imports of helpers
+they only reach through a newer one.
 
 Skipped when:
 
@@ -394,6 +396,8 @@ Skipped when:
 - The LLM rejects the group as not actually duplicated
 - A block uses `this` but the blocks are not all instance methods of one class
 - A cross-file group's imports cannot move, or no usable shared directory exists
+- Re-detected residue would only wrap a helper extracted earlier in the same run
+  (every block just declares locals and calls that helper — a trivial proxy)
 - No LLM API key is configured (`MOONSHOT_API_KEY`)
 
 ## Architecture
