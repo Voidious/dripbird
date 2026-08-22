@@ -360,7 +360,7 @@ Deno.test("cross-file extractor extracts into a new shared module", async () => 
     assertEquals(
         result.modified.get("a.ts"),
         [
-            'import { greetUser } from "./common/greetUser";',
+            'import { greetUser } from "./common/greetUser.ts";',
             "",
             "function alpha(user) {",
             "    greetUser(user);",
@@ -370,7 +370,7 @@ Deno.test("cross-file extractor extracts into a new shared module", async () => 
     assertEquals(
         result.modified.get("b.ts"),
         [
-            'import { greetUser } from "./common/greetUser";',
+            'import { greetUser } from "./common/greetUser.ts";',
             "",
             "function greetCustomer(name) {",
             "    greetUser(name);",
@@ -453,7 +453,7 @@ Deno.test("cross-file extractor aliases the binding on name collision", async ()
     assertEquals(
         result.modified.get("a.ts"),
         [
-            'import { greetUser as greetUser2 } from "./common/greetUser";',
+            'import { greetUser as greetUser2 } from "./common/greetUser.ts";',
             "",
             "function greetUser(x) {",
             "    return x;",
@@ -542,7 +542,7 @@ Deno.test("cross-file extractor moves imports into the shared module", async () 
     assertEquals(
         result.created.get("common/greetUser.ts"),
         [
-            'import { log } from "../log";',
+            'import { log } from "../log.ts";',
             "",
             "export function greetUser(user) {",
             "    const line = `Hi ${user}`;",
@@ -556,7 +556,7 @@ Deno.test("cross-file extractor moves imports into the shared module", async () 
     assertEquals(
         result.modified.get("a.ts"),
         [
-            'import { greetUser } from "./common/greetUser";',
+            'import { greetUser } from "./common/greetUser.ts";',
             "",
             "function alpha(user) {",
             "    greetUser(user);",
@@ -1515,6 +1515,243 @@ Deno.test("gateCrossFileGroups skips awaited forwarding residue too", async () =
     assert(logs.some((m) => m.includes("only forward")));
 });
 
+Deno.test("gateCrossFileGroups skips if/return forwarding residue", async () => {
+    // The live-self-test residue shape: `if (helper(...)) return true;
+    // return false;` only branches on a run-created helper and returns
+    // literals, so extracting it would wrap the helper in a proxy.
+    const fn = [
+        "function alpha(x) {",
+        "    if (helperOne(x)) return true;",
+        "    return false;",
+        "}",
+    ].join("\n");
+    const aSrc = [
+        'import { helperOne } from "./common/helperOne";',
+        "",
+        fn,
+    ].join("\n");
+    const files = filesOf([
+        { file: "a.ts", source: aSrc },
+        { file: "b.ts", source: aSrc.replace("alpha", "beta") },
+    ]);
+    const group: CrossFileGroup = {
+        fingerprint: "residue-if",
+        blocks: [
+            blockIn("a.ts", parseStmts(fn)),
+            blockIn("b.ts", parseStmts(fn)),
+        ],
+    };
+
+    const logs: string[] = [];
+    const gated = await gateCrossFileGroups(
+        [group],
+        files,
+        "/base",
+        (p) =>
+            Promise.resolve(
+                p === "/base/common/helperOne.ts"
+                    ? "export function helperOne() {}\n"
+                    : null,
+            ),
+        (msg) => logs.push(msg),
+        ["common"],
+        new Set(["common/helperOne.ts"]),
+    );
+
+    assertEquals(gated, []);
+    assert(logs.some((m) => m.includes("only forward")));
+});
+
+Deno.test("gateCrossFileGroups skips negated and awaited if/return residue", async () => {
+    const fn = [
+        "async function alpha(x) {",
+        "    if (!(await helperOne(x))) return;",
+        "    return undefined;",
+        "}",
+    ].join("\n");
+    const aSrc = [
+        'import { helperOne } from "./common/helperOne";',
+        "",
+        fn,
+    ].join("\n");
+    const files = filesOf([
+        { file: "a.ts", source: aSrc },
+        { file: "b.ts", source: aSrc.replace("alpha", "beta") },
+    ]);
+    const group: CrossFileGroup = {
+        fingerprint: "residue-if-await",
+        blocks: [
+            blockIn("a.ts", parseStmts(fn)),
+            blockIn("b.ts", parseStmts(fn)),
+        ],
+    };
+
+    const logs: string[] = [];
+    const gated = await gateCrossFileGroups(
+        [group],
+        files,
+        "/base",
+        (p) =>
+            Promise.resolve(
+                p === "/base/common/helperOne.ts"
+                    ? "export function helperOne() {}\n"
+                    : null,
+            ),
+        (msg) => logs.push(msg),
+        ["common"],
+        new Set(["common/helperOne.ts"]),
+    );
+
+    assertEquals(gated, []);
+    assert(logs.some((m) => m.includes("only forward")));
+});
+
+Deno.test("gateCrossFileGroups keeps if-residue whose branches do real work", async () => {
+    // Branching on a helper, but the branch logs before returning —
+    // extracting this is a real second helper, not a proxy.
+    const fn = [
+        "function alpha(x) {",
+        "    if (helperOne(x)) {",
+        '        console.log("hit");',
+        "        return true;",
+        "    }",
+        "    return false;",
+        "}",
+    ].join("\n");
+    const aSrc = [
+        'import { helperOne } from "./common/helperOne";',
+        "",
+        fn,
+    ].join("\n");
+    const files = filesOf([
+        { file: "a.ts", source: aSrc },
+        { file: "b.ts", source: aSrc.replace("alpha", "beta") },
+    ]);
+    const group: CrossFileGroup = {
+        fingerprint: "residue-if-work",
+        blocks: [
+            blockIn("a.ts", parseStmts(fn)),
+            blockIn("b.ts", parseStmts(fn)),
+        ],
+    };
+
+    const logs: string[] = [];
+    const gated = await gateCrossFileGroups(
+        [group],
+        files,
+        "/base",
+        (p) =>
+            Promise.resolve(
+                p === "/base/common/helperOne.ts"
+                    ? "export function helperOne() {}\n"
+                    : null,
+            ),
+        (msg) => logs.push(msg),
+        ["common"],
+        new Set(["common/helperOne.ts"]),
+    );
+
+    assertEquals(gated.length, 1);
+    assertEquals(gated[0].sharedDirAbs, "/base/common");
+    assert(!logs.some((m) => m.includes("only forward")));
+});
+
+Deno.test("gateCrossFileGroups keeps if-residue with computed returns", async () => {
+    // The if branches on a helper, but the returns are computed — real
+    // work, so the group stays extractable. The if test also branches on
+    // a non-helper call, which alone must not mark the block forwarding.
+    const fn = [
+        "function alpha(x) {",
+        "    if (realCheck(x)) return true;",
+        "    return helperOne(x) !== null;",
+        "}",
+    ].join("\n");
+    const aSrc = [
+        'import { helperOne } from "./common/helperOne";',
+        "",
+        fn,
+    ].join("\n");
+    const files = filesOf([
+        { file: "a.ts", source: aSrc },
+        { file: "b.ts", source: aSrc.replace("alpha", "beta") },
+    ]);
+    const group: CrossFileGroup = {
+        fingerprint: "residue-if-computed",
+        blocks: [
+            blockIn("a.ts", parseStmts(fn)),
+            blockIn("b.ts", parseStmts(fn)),
+        ],
+    };
+
+    const logs: string[] = [];
+    const gated = await gateCrossFileGroups(
+        [group],
+        files,
+        "/base",
+        (p) =>
+            Promise.resolve(
+                p === "/base/common/helperOne.ts"
+                    ? "export function helperOne() {}\n"
+                    : null,
+            ),
+        (msg) => logs.push(msg),
+        ["common"],
+        new Set(["common/helperOne.ts"]),
+    );
+
+    assertEquals(gated.length, 1);
+    assert(!logs.some((m) => m.includes("only forward")));
+});
+
+Deno.test("gateCrossFileGroups keeps residue that loops", async () => {
+    // A loop is control flow the deterministic guard does not reason
+    // about, so it counts as real work even when its body only calls
+    // the helper — extraction stays possible and review judges it.
+    const fn = [
+        "function alpha(items) {",
+        "    for (const item of items) {",
+        "        helperOne(item);",
+        "    }",
+        "    return true;",
+        "}",
+    ].join("\n");
+    const aSrc = [
+        'import { helperOne } from "./common/helperOne";',
+        "",
+        fn,
+    ].join("\n");
+    const files = filesOf([
+        { file: "a.ts", source: aSrc },
+        { file: "b.ts", source: aSrc.replace("alpha", "beta") },
+    ]);
+    const group: CrossFileGroup = {
+        fingerprint: "residue-loop",
+        blocks: [
+            blockIn("a.ts", parseStmts(fn)),
+            blockIn("b.ts", parseStmts(fn)),
+        ],
+    };
+
+    const logs: string[] = [];
+    const gated = await gateCrossFileGroups(
+        [group],
+        files,
+        "/base",
+        (p) =>
+            Promise.resolve(
+                p === "/base/common/helperOne.ts"
+                    ? "export function helperOne() {}\n"
+                    : null,
+            ),
+        (msg) => logs.push(msg),
+        ["common"],
+        new Set(["common/helperOne.ts"]),
+    );
+
+    assertEquals(gated.length, 1);
+    assert(!logs.some((m) => m.includes("only forward")));
+});
+
 Deno.test("gateCrossFileGroups keeps forwarding blocks that do real work", async () => {
     // The blocks call a run-created helper, but the trailing console.log
     // is work of their own — a second helper here is not a trivial proxy.
@@ -1637,7 +1874,7 @@ Deno.test("cross-file extractor uses the configured shared dir", async () => {
     assert(result.created.has("helpers/greetUser.ts"));
     assert(
         result.modified.get("a.ts")!.includes(
-            'import { greetUser } from "./helpers/greetUser";',
+            'import { greetUser } from "./helpers/greetUser.ts";',
         ),
     );
 });
@@ -1738,8 +1975,8 @@ Deno.test("cross-file extractor carries namespace and default imports to the mod
     assertEquals(
         result.created.get("common/greetUser.ts"),
         [
-            'import * as log from "../log";',
-            'import sink from "../sink";',
+            'import * as log from "../log.ts";',
+            'import sink from "../sink.ts";',
             "",
             "export function greetUser(user) {",
             "    log.write(`Hi ${user}`);",
@@ -1836,7 +2073,7 @@ Deno.test("cross-file extractor ignores imports the blocks do not use", async ()
     assertEquals(
         result.created.get("common/greetUser.ts"),
         [
-            'import { log } from "../log";',
+            'import { log } from "../log.ts";',
             "",
             "export function greetUser(user) {",
             "    const line = `Hi ${user}`;",
@@ -2039,7 +2276,7 @@ Deno.test("cross-file extractor handles several blocks in one file", async () =>
     assertEquals(
         result.modified.get("a.ts"),
         [
-            'import { greetUser } from "./common/greetUser";',
+            'import { greetUser } from "./common/greetUser.ts";',
             "",
             "function alpha(user) {",
             "    greetUser(user);",
@@ -2075,7 +2312,7 @@ Deno.test("cross-file extractor suffixes the module when the path exists", async
     assertEquals(result.changed, true);
     assert(result.created.has("common/greetUser2.ts"));
     assert(
-        result.modified.get("a.ts")!.includes('"./common/greetUser2"'),
+        result.modified.get("a.ts")!.includes('"./common/greetUser2.ts"'),
     );
 });
 
@@ -2118,7 +2355,7 @@ Deno.test("cross-file extractor preserves aliased named imports in the module", 
     assertEquals(
         result.created.get("common/greetUser.ts"),
         [
-            'import { write as log } from "../log";',
+            'import { write as log } from "../log.ts";',
             "",
             "export function greetUser(user) {",
             "    log(`Hi ${user}`);",
@@ -2255,7 +2492,7 @@ Deno.test("cross-file extractor moves imports of modules created in the same run
     assertEquals(
         result.created.get("common/handleGreeting.ts"),
         [
-            'import { greetUser } from "./greetUser";',
+            'import { greetUser } from "./greetUser.ts";',
             "",
             "export function handleGreeting(user: string): boolean {",
             "    const line = greetUser(user);",
@@ -2271,7 +2508,7 @@ Deno.test("cross-file extractor moves imports of modules created in the same run
     assertEquals(
         result.modified.get("a.ts"),
         [
-            'import { handleGreeting } from "./common/handleGreeting";',
+            'import { handleGreeting } from "./common/handleGreeting.ts";',
             "",
             "function alpha(user: string) {",
             "    return handleGreeting(user);",
@@ -2281,7 +2518,7 @@ Deno.test("cross-file extractor moves imports of modules created in the same run
     assertEquals(
         result.modified.get("b.ts"),
         [
-            'import { handleGreeting } from "./common/handleGreeting";',
+            'import { handleGreeting } from "./common/handleGreeting.ts";',
             "",
             "function greetCustomer(name: string) {",
             "    return handleGreeting(name);",
@@ -2369,7 +2606,7 @@ Deno.test("cross-file extractor type-checks proposals across files", async () =>
     assertEquals(
         result.modified.get("a.ts"),
         [
-            'import { greetUser } from "./common/greetUser";',
+            'import { greetUser } from "./common/greetUser.ts";',
             "",
             "function alpha(user: string) {",
             "    return greetUser(user);",
@@ -2480,7 +2717,7 @@ Deno.test("cross-file extractor skips trivial-proxy residue instead of wrapping 
     assertEquals(
         result.modified.get("a.ts"),
         [
-            'import { logPair } from "./common/logPair";',
+            'import { logPair } from "./common/logPair.ts";',
             "",
             "function logStartup(name) {",
             "    const stamp = new Date().toISOString();",
@@ -2491,7 +2728,7 @@ Deno.test("cross-file extractor skips trivial-proxy residue instead of wrapping 
     assertEquals(
         result.modified.get("b.ts"),
         [
-            'import { logPair } from "./common/logPair";',
+            'import { logPair } from "./common/logPair.ts";',
             "",
             "function logBoot(service) {",
             "    const stamp = new Date().toISOString();",

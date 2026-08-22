@@ -26,8 +26,6 @@ import {
 } from "./function_matcher_imports.ts";
 import { isPropertyContext } from "./duplicate_extractor.ts";
 
-const MODULE_EXTENSIONS = /\.(ts|tsx|mts|js|jsx|mjs|cjs)$/;
-
 function toPosix(path: string): string {
     return path.replace(/\\/g, "/");
 }
@@ -56,16 +54,17 @@ export function commonAncestorDir(files: string[]): string {
 
 /**
  * Relative import specifier for `fromFile` to import `toFile` (both
- * absolute, `/`-separated), with the module extension stripped per
- * TypeScript convention. Same-directory imports keep the required `./`
- * prefix.
+ * absolute, `/`-separated), keeping the target's module extension:
+ * explicit specifiers (`./common/helper.ts`) resolve under both Deno
+ * (which requires them) and Node-style toolchains. Same-directory
+ * imports keep the required `./` prefix.
  */
 export function relativeSpecifier(fromFile: string, toFile: string): string {
     const from = toPosix(fromFile).split("/");
     const to = toPosix(toFile).split("/");
     const fromDir = from.slice(0, -1);
     const toDir = to.slice(0, -1);
-    const name = to[to.length - 1].replace(MODULE_EXTENSIONS, "");
+    const name = to[to.length - 1];
 
     let i = 0;
     while (i < fromDir.length && i < toDir.length && fromDir[i] === toDir[i]) {

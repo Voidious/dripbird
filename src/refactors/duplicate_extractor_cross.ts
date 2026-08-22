@@ -445,25 +445,93 @@ async function runCreatedHelperBindings(
     return bindings;
 }
 
+/** Expression types a forwarding `return` may carry unchanged. */
+const LITERAL_TYPES = new Set([
+    "BooleanLiteral",
+    "NullLiteral",
+    "NumericLiteral",
+    "StringLiteral",
+    "BigIntLiteral",
+    "RegExpLiteral",
+    "TemplateLiteral",
+]);
+
 /**
- * A statement that only FORWARDS: a local declaration, or a (possibly
- * awaited) call to a helper extracted earlier this run. Anything else —
- * returns, conditionals, calls to anything else — is real work.
+ * A (possibly awaited, possibly negated) call to a helper extracted
+ * earlier this run.
  */
-function isForwardingStatement(stmt: any, helperBindings: Set<string>): boolean {
-    if (stmt.type === "VariableDeclaration") return true;
-    if (stmt.type !== "ExpressionStatement") return false;
-    let expr = stmt.expression;
-    if (expr?.type === "AwaitExpression") expr = expr.argument;
+function isHelperCallExpression(
+    expr: any,
+    helperBindings: Set<string>,
+): boolean {
+    if (expr?.type === "UnaryExpression" && expr.operator === "!") {
+        return isHelperCallExpression(expr.argument, helperBindings);
+    }
+    if (expr?.type === "AwaitExpression") {
+        return isHelperCallExpression(expr.argument, helperBindings);
+    }
     return expr?.type === "CallExpression" &&
         expr.callee?.type === "Identifier" &&
         helperBindings.has(expr.callee.name);
 }
 
 /**
+ * A `return` of nothing, a literal, or a helper call — it hands a value
+ * straight back (or straight through a run-created helper) without doing
+ * work of its own.
+ */
+function isForwardingReturn(stmt: any, helperBindings: Set<string>): boolean {
+    if (stmt.type !== "ReturnStatement") return false;
+    const arg = stmt.argument ?? null;
+    if (arg === null) return true;
+    if (LITERAL_TYPES.has(arg.type)) return true;
+    if (arg.type === "Identifier" && arg.name === "undefined") return true;
+    return isHelperCallExpression(arg, helperBindings);
+}
+
+/**
+ * An `if` branch (bare statement or block) holding only forwarding
+ * returns; an empty branch forwards the call's effect and nothing else.
+ */
+function isForwardingBranch(
+    branch: any,
+    helperBindings: Set<string>,
+): boolean {
+    if (branch === null || branch === undefined) return true;
+    const stmts = branch.type === "BlockStatement" ? branch.body : [branch];
+    return stmts.every((s: any) => isForwardingReturn(s, helperBindings));
+}
+
+/**
+ * A statement that only FORWARDS: a local declaration, a (possibly
+ * awaited) call to a helper extracted earlier this run, a `return` of
+ * nothing/literals/such a call, or an `if` that branches on such a call
+ * and only returns from its branches (`if (helper(x)) return true;
+ * return false;` — the live-self-test residue shape). Anything else —
+ * computed returns, conditionals on anything else, calls to anything
+ * else — is real work.
+ */
+function isForwardingStatement(stmt: any, helperBindings: Set<string>): boolean {
+    if (stmt.type === "VariableDeclaration") return true;
+    if (stmt.type === "ExpressionStatement") {
+        return isHelperCallExpression(stmt.expression, helperBindings);
+    }
+    if (stmt.type === "ReturnStatement") {
+        return isForwardingReturn(stmt, helperBindings);
+    }
+    if (stmt.type === "IfStatement") {
+        return isHelperCallExpression(stmt.test, helperBindings) &&
+            isForwardingBranch(stmt.consequent, helperBindings) &&
+            isForwardingBranch(stmt.alternate, helperBindings);
+    }
+    return false;
+}
+
+/**
  * Whether a group is residue from an earlier extraction this run: every
- * block only declares locals and calls a helper module this run already
- * created. Extracting such blocks again would only produce a trivial
+ * block only declares locals, calls a helper module this run already
+ * created, and branches/returns around those calls without doing work of
+ * its own. Extracting such blocks again would only produce a trivial
  * proxy function wrapping that helper, so the group is skipped and the
  * call sites stay where they are.
  */
@@ -516,8 +584,9 @@ export interface GatedGroup {
  * logging why the others are skipped. Gates, in order:
  *
  * 1. Not a trivial proxy: the blocks must do something besides declare
- *    locals and call helpers extracted earlier in the same run (residue
- *    from a previous pass would only wrap that helper again).
+ *    locals, call helpers extracted earlier in the same run, and
+ *    branch/return around those calls (residue from a previous pass
+ *    would only wrap that helper again).
  * 2. A usable shared directory exists under the common ancestor.
  * 3. Every import binding referenced by any block is movable: bare
  *    specifiers move verbatim; relative ones must resolve against the

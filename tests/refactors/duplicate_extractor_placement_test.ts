@@ -31,28 +31,28 @@ Deno.test("commonAncestorDir finds deepest shared directory", () => {
 Deno.test("relativeSpecifier builds specifiers between files", () => {
     assertEquals(
         relativeSpecifier("/base/a.ts", "/base/common/helper.ts"),
-        "./common/helper",
+        "./common/helper.ts",
     );
     assertEquals(
         relativeSpecifier("/base/src/a.ts", "/base/common/helper.ts"),
-        "../common/helper",
+        "../common/helper.ts",
     );
     assertEquals(
         relativeSpecifier("/base/src/deep/a.ts", "/base/src/util.ts"),
-        "../util",
+        "../util.ts",
     );
     assertEquals(
         relativeSpecifier("/base/mod1.ts", "/base/mod2.ts"),
-        "./mod2",
+        "./mod2.ts",
     );
     assertEquals(
         relativeSpecifier("/base/a.ts", "/base/b/c/d.ts"),
-        "./b/c/d",
+        "./b/c/d.ts",
     );
-    // Extension is stripped per TS convention, including .tsx.
+    // The target's real extension is kept, including .tsx.
     assertEquals(
         relativeSpecifier("/base/a.ts", "/base/b/c.tsx"),
-        "./b/c",
+        "./b/c.tsx",
     );
 });
 
@@ -107,7 +107,7 @@ Deno.test("checkImportMovable passes bare specifiers through verbatim", async ()
 
 Deno.test("checkImportMovable rewrites relative imports to shared location", async () => {
     // a.ts imports ./util (resolves to /base/src/util.ts); the shared
-    // module at /base/common/helper.ts must reach it as ../src/util.
+    // module at /base/common/helper.ts must reach it as ../src/util.ts.
     assertEquals(
         await checkImportMovable(
             "./util",
@@ -115,9 +115,10 @@ Deno.test("checkImportMovable rewrites relative imports to shared location", asy
             "/base/common/helper.ts",
             filesMap({ "/base/src/util.ts": "export const u = 1;\n" }),
         ),
-        { specifier: "../src/util" },
+        { specifier: "../src/util.ts" },
     );
-    // Extension candidates are probed in order.
+    // Extension candidates are probed in order; the target's real
+    // extension is kept in the rewritten specifier.
     assertEquals(
         await checkImportMovable(
             "./util.js",
@@ -125,7 +126,7 @@ Deno.test("checkImportMovable rewrites relative imports to shared location", asy
             "/base/common/helper.ts",
             filesMap({ "/base/src/util.js": "export const u = 1;\n" }),
         ),
-        { specifier: "../src/util" },
+        { specifier: "../src/util.js" },
     );
 });
 

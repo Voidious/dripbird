@@ -88,6 +88,10 @@ export class TypeCheckerImpl implements TypeChecker {
             target: ts.ScriptTarget.Latest,
             module: ts.ModuleKind.ESNext,
             moduleResolution: ts.ModuleResolutionKind.NodeJs,
+            // Explicit `.ts` specifiers are what dripbird emits (Deno
+            // requires them); allow them here so the gate does not flag
+            // its own output. Requires noEmit, which is set below.
+            allowImportingTsExtensions: true,
             strict: true,
             noEmit: true,
             esModuleInterop: true,

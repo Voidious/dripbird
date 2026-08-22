@@ -1,4 +1,4 @@
-import { logServiceReady } from "./common/logServiceReady";
+import { logServiceReady } from "./common/logServiceReady.ts";
 
 function logBoot(service) {
     logServiceReady(service);
