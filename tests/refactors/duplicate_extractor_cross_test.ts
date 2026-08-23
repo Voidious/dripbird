@@ -7,6 +7,7 @@ import type {
     ReviewResult,
 } from "../../src/llm.ts";
 import {
+    collectLintIgnoreDirectives,
     createCrossFileDuplicateExtractor,
     type CrossFileBlock,
     type CrossFileGroup,
@@ -30,6 +31,7 @@ const testConfig: Config = {
     duplicate_extractor_retries: 2,
     duplicate_extractor_shared_dir: "common",
     duplicate_extractor_cross_file: true,
+    format_output: false,
     provider: "moonshot",
     model: "kimi-k2.5",
     enabled_refactors: [],
@@ -2735,5 +2737,135 @@ Deno.test("cross-file extractor skips trivial-proxy residue instead of wrapping 
             "    logPair(stamp, service);",
             "}",
         ].join("\n"),
+    );
+});
+
+Deno.test("collectLintIgnoreDirectives gathers leading file directives", () => {
+    const source = [
+        "#!/usr/bin/env deno",
+        "// a normal comment",
+        "// deno-lint-ignore-file no-explicit-any",
+        "//  deno-lint-ignore-file no-eval",
+        "/* header */",
+        "",
+        "const x = 1;",
+    ].join("\n");
+    assertEquals(collectLintIgnoreDirectives(source), [
+        "// deno-lint-ignore-file no-explicit-any",
+        "//  deno-lint-ignore-file no-eval",
+    ]);
+});
+
+Deno.test("collectLintIgnoreDirectives ignores directives after code", () => {
+    const source = [
+        "const x = 1;",
+        "// deno-lint-ignore-file no-explicit-any",
+    ].join("\n");
+    assertEquals(collectLintIgnoreDirectives(source), []);
+});
+
+Deno.test("collectLintIgnoreDirectives ignores look-alikes in block comments", () => {
+    const source = [
+        "/*",
+        "// deno-lint-ignore-file no-explicit-any",
+        "*/",
+        "const x = 1;",
+    ].join("\n");
+    assertEquals(collectLintIgnoreDirectives(source), []);
+});
+
+Deno.test("collectLintIgnoreDirectives returns empty without directives", () => {
+    assertEquals(collectLintIgnoreDirectives("// hello\nconst x = 1;\n"), []);
+    assertEquals(collectLintIgnoreDirectives("const x = 1;\n"), []);
+});
+
+Deno.test("cross-file extractor unions lint directives into the shared module", async () => {
+    const files = filesOf([
+        {
+            file: "a.ts",
+            source: `// deno-lint-ignore-file no-explicit-any\n${sourceA}`,
+        },
+        {
+            file: "b.ts",
+            source:
+                "// deno-lint-ignore-file no-explicit-any\n// deno-lint-ignore-file no-eval\n" +
+                sourceB,
+        },
+    ]);
+
+    const llm: LLMClient = {
+        // deno-lint-ignore require-await
+        async nameFunction() {
+            return "mock";
+        },
+        // deno-lint-ignore require-await
+        async verifyFunctionMatch() {
+            return { isMatch: false, reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateCallReplacement() {
+            return "";
+        },
+        // deno-lint-ignore require-await
+        async reviewChange() {
+            return { accepted: true, feedback: "" };
+        },
+        // deno-lint-ignore require-await
+        async verifyDuplicateMatch() {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateExtraction() {
+            return { helperName: "", helperFunction: "", callSites: [] };
+        },
+        // deno-lint-ignore require-await
+        async verifyCrossFileDuplicateMatch() {
+            return { isMatch: true, excludeIndices: [], reason: "ok" };
+        },
+        // deno-lint-ignore require-await
+        async generateCrossFileExtraction() {
+            return {
+                helperName: "greetUser",
+                helperFunction:
+                    "function greetUser(user) {\n    const line = `Hi ${user}`;\n    logger.log(line);\n}\n",
+                callSites: ["    greetUser(user);\n", "    greetUser(name);\n"],
+            };
+        },
+        // deno-lint-ignore require-await
+        async reviewCrossFileChange() {
+            return { accepted: true, feedback: "" };
+        },
+    };
+
+    const result = await createCrossFileDuplicateExtractor(testConfig, llm)(
+        files,
+        {
+            baseDir: "/base",
+            log: () => {},
+            readFile: () => Promise.resolve(null),
+        },
+    );
+
+    assertEquals(result.changed, true);
+    // Union of both files' directives, verbatim, deduped — above the
+    // export (there are no helper imports for this group).
+    assertEquals(
+        result.created.get("common/greetUser.ts"),
+        [
+            "// deno-lint-ignore-file no-explicit-any",
+            "// deno-lint-ignore-file no-eval",
+            "export function greetUser(user) {",
+            "    const line = `Hi ${user}`;",
+            "    logger.log(line);",
+            "}",
+            "",
+        ].join("\n"),
+    );
+    // The sources keep their own directives, with the inserted import
+    // landing below them.
+    assert(
+        result.modified.get("a.ts")!.startsWith(
+            '// deno-lint-ignore-file no-explicit-any\nimport { greetUser } from "./common/greetUser.ts";',
+        ),
     );
 });

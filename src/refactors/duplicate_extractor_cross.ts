@@ -21,6 +21,11 @@
  * extraction would just wrap the first helper in a trivial proxy), and
  * each rewrite prunes imports it orphaned so callers never keep stale
  * imports of helpers they no longer call directly.
+ *
+ * Shared modules inherit the `// deno-lint-ignore-file` directives of
+ * the files their code came from (union, verbatim, deduped): the moved
+ * code carries the reason the author suppressed those rules, so the new
+ * module must not start failing lint the sources never failed.
  */
 import type { ChangedRange } from "../diff.ts";
 import type { Config } from "../config.ts";
@@ -197,6 +202,33 @@ function firstCodeLineIndex(lines: string[]): number {
         }
     }
     return lines.length;
+}
+
+const LINT_IGNORE_FILE_RE = /^\/\/\s*deno-lint-ignore-file\b/;
+
+/**
+ * `// deno-lint-ignore-file` lines from a file's leading comment block
+ * (before any code — later occurrences are not file-scoped directives).
+ * Lines that only LOOK like the directive from inside a block comment do
+ * not count. Returned verbatim (trimmed) in file order.
+ */
+export function collectLintIgnoreDirectives(source: string): string[] {
+    const directives: string[] = [];
+    const lines = source.split("\n");
+    let inBlockComment = false;
+    for (let i = 0; i < firstCodeLineIndex(lines); i++) {
+        const text = lines[i].trim();
+        if (inBlockComment) {
+            if (text.includes("*/")) inBlockComment = false;
+            continue;
+        }
+        if (text.startsWith("/*")) {
+            if (!text.includes("*/")) inBlockComment = true;
+            continue;
+        }
+        if (LINT_IGNORE_FILE_RE.test(text)) directives.push(text);
+    }
+    return directives;
 }
 
 /**
@@ -948,6 +980,22 @@ async function extractGroup(
         return null;
     }
 
+    // Union (verbatim, deduped) of the lint-ignore directives of every
+    // file whose blocks actually move: the shared module must not start
+    // failing rules the sources suppressed for this very code.
+    const lintDirectives: string[] = [];
+    const seenDirectives = new Set<string>();
+    for (const file of new Set(remaining.map((b) => b.file))) {
+        for (
+            const directive of collectLintIgnoreDirectives(sources.get(file)!)
+        ) {
+            if (!seenDirectives.has(directive)) {
+                seenDirectives.add(directive);
+                lintDirectives.push(directive);
+            }
+        }
+    }
+
     const forbiddenNames = new Set<string>(JS_TS_KEYWORDS);
     for (const file of new Set(remaining.map((b) => b.file))) {
         for (const name of collectFileLevelBindings(astOf(file))) {
@@ -1109,11 +1157,12 @@ async function extractGroup(
             /^export\s+/,
             "",
         );
-        const moduleContent = (helperImports.length > 0
-            ? `${
-                helperImports.map((i) => i.line).join("\n")
-            }\n\n`
-            : "") + `export ${helperFn}\n`;
+        const moduleContent =
+            (lintDirectives.length > 0 ? `${lintDirectives.join("\n")}\n` : "") +
+            (helperImports.length > 0
+                ? `${helperImports.map((i) => i.line).join("\n")}\n\n`
+                : "") +
+            `export ${helperFn}\n`;
         try {
             parseBare(moduleContent);
         } catch {

@@ -15,6 +15,7 @@ import { createDuplicateExtractor } from "./refactors/duplicate_extractor.ts";
 import { createCrossFileDuplicateExtractor } from "./refactors/duplicate_extractor_cross.ts";
 import { TypeCheckerImpl } from "./type_checker.ts";
 import type { TypeChecker } from "./type_checker.ts";
+import { createOutputFormatter, type OutputFormatter } from "./formatter.ts";
 import type { LLMOptions } from "./llm.ts";
 
 export async function readStream(
@@ -107,6 +108,7 @@ function printConfig(config: Config): void {
             "duplicate_extractor_retries",
             String(config.duplicate_extractor_retries),
         ],
+        ["format_output", String(config.format_output)],
         ["verbose", String(config.verbose)],
     ];
     const maxKeyLen = Math.max(...entries.map(([k]) => k.length));
@@ -132,6 +134,13 @@ export async function runCrossFilePass(
 ): Promise<boolean> {
     if (crossFileRefactors.length === 0 || files.length === 0) return false;
 
+    const formatter: OutputFormatter | null = config.format_output
+        ? createOutputFormatter(baseDir)
+        : null;
+    // Eligibility ("was fmt-clean before dripbird touched it") is decided
+    // per file against the pre-run source and cached across refactors.
+    const cleanBefore = new Map<string, boolean>();
+
     const changesets: FileChangeset[] = [];
     for (const { file, ranges } of files) {
         try {
@@ -152,14 +161,26 @@ export async function runCrossFilePass(
         });
         if (!result.changed) continue;
         for (const [file, source] of result.modified) {
-            await Deno.writeTextFile(`${baseDir}/${file}`, source);
+            const filePath = `${baseDir}/${file}`;
+            let eligible = cleanBefore.get(file);
+            if (eligible === undefined) {
+                // First write of this file: disk still holds the pre-run
+                // original, so the check measures the repo, not us.
+                eligible = formatter !== null && await formatter.isClean(filePath);
+                cleanBefore.set(file, eligible);
+            }
+            await Deno.writeTextFile(filePath, source);
+            if (eligible) await formatter!.format(filePath);
         }
         for (const [file, content] of result.created) {
             // The path always contains baseDir, so the directory part is
             // never empty.
             const dir = `${baseDir}/${file}`.split("/").slice(0, -1).join("/");
             await Deno.mkdir(dir, { recursive: true });
-            await Deno.writeTextFile(`${baseDir}/${file}`, content);
+            const filePath = `${baseDir}/${file}`;
+            await Deno.writeTextFile(filePath, content);
+            // New files are entirely ours: always formatted when enabled.
+            if (formatter !== null) await formatter.format(filePath);
         }
         printConfigOnce();
         console.error(`dripbird: ${result.description}`);
@@ -272,6 +293,9 @@ export async function runInDir(
     ) || anyChanged;
 
     const fileResults: FileResult[] = [];
+    const fileFormatter: OutputFormatter | null = config.format_output
+        ? createOutputFormatter(baseDir)
+        : null;
 
     for (const { file, ranges } of files) {
         const filePath = `${baseDir}/${file}`;
@@ -308,7 +332,12 @@ export async function runInDir(
 
         if (result.changed) {
             printConfigOnce();
+            // Eligibility before the write: disk still holds the source
+            // this loop read, so the check measures the repo, not us.
+            const eligible = fileFormatter !== null &&
+                await fileFormatter.isClean(filePath);
             await Deno.writeTextFile(filePath, result.source);
+            if (eligible) await fileFormatter!.format(filePath);
             console.error(
                 `dripbird: ${file}: ${result.description}`,
             );

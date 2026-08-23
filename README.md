@@ -69,21 +69,22 @@ Local overrides take precedence over committed settings.
 
 ### Options
 
-| Option                           | Default       | Description                                                                               |
-| -------------------------------- | ------------- | ----------------------------------------------------------------------------------------- |
-| `max_function_lines`             | `75`          | Line count threshold above which the function splitter will consider splitting a function |
-| `function_splitter_retries`      | `2`           | Number of LLM retry attempts when naming a helper function                                |
-| `function_matcher_retries`       | `2`           | Number of LLM retry attempts when a function matcher edit fails verification              |
-| `duplicate_extractor_min_lines`  | `2`           | Minimum line span for a code block to be considered for duplicate extraction              |
-| `duplicate_extractor_max_lines`  | `12`          | Maximum line span for a code block to be considered for duplicate extraction              |
-| `duplicate_extractor_retries`    | `2`           | Number of LLM retry attempts when a duplicate extraction fails verification               |
-| `duplicate_extractor_shared_dir` | `"common"`    | Preferred directory name for cross-file extraction's shared helper modules                |
-| `duplicate_extractor_cross_file` | `true`        | Whether duplicate extraction may extract across files                                     |
-| `provider`                       | `"moonshot"`  | LLM provider (currently only `"moonshot"`)                                                |
-| `model`                          | `"kimi-k2.5"` | LLM model name to use                                                                     |
-| `enabled_refactors`              | `[]`          | If non-empty, only these refactors will run                                               |
-| `disabled_refactors`             | `[]`          | These refactors will be skipped                                                           |
-| `verbose`                        | `false`       | Print detailed log output for each refactor                                               |
+| Option                           | Default       | Description                                                                                          |
+| -------------------------------- | ------------- | ---------------------------------------------------------------------------------------------------- |
+| `max_function_lines`             | `75`          | Line count threshold above which the function splitter will consider splitting a function            |
+| `function_splitter_retries`      | `2`           | Number of LLM retry attempts when naming a helper function                                           |
+| `function_matcher_retries`       | `2`           | Number of LLM retry attempts when a function matcher edit fails verification                         |
+| `duplicate_extractor_min_lines`  | `2`           | Minimum line span for a code block to be considered for duplicate extraction                         |
+| `duplicate_extractor_max_lines`  | `12`          | Maximum line span for a code block to be considered for duplicate extraction                         |
+| `duplicate_extractor_retries`    | `2`           | Number of LLM retry attempts when a duplicate extraction fails verification                          |
+| `duplicate_extractor_shared_dir` | `"common"`    | Preferred directory name for cross-file extraction's shared helper modules                           |
+| `duplicate_extractor_cross_file` | `true`        | Whether duplicate extraction may extract across files                                                |
+| `format_output`                  | `true`        | Format files dripbird writes with `deno fmt` (new files always; rewrites only when fmt-clean before) |
+| `provider`                       | `"moonshot"`  | LLM provider (currently only `"moonshot"`)                                                           |
+| `model`                          | `"kimi-k2.5"` | LLM model name to use                                                                                |
+| `enabled_refactors`              | `[]`          | If non-empty, only these refactors will run                                                          |
+| `disabled_refactors`             | `[]`          | These refactors will be skipped                                                                      |
+| `verbose`                        | `false`       | Print detailed log output for each refactor                                                          |
 
 ### Example `dripbird.yml`
 
@@ -93,6 +94,14 @@ function_splitter_retries: 3
 disabled_refactors:
     - function_splitter
 ```
+
+### Output formatting
+
+Everything dripbird writes goes through the output formatting gate (`format_output`,
+on by default): new files are always formatted, and rewritten files are formatted
+only when they were already `deno fmt`-clean before the change. A repo that does not
+use `deno fmt` never gets unrelated churn inside a refactor diff; a repo that does
+(like dripbird itself) gets output that passes `deno fmt --check` out of the box.
 
 ### LLM Setup
 
@@ -390,7 +399,10 @@ files work under Deno's extension-required resolution and Node-style toolchains
 alike. Every proposal must also pass a multi-file type check (no new diagnostics vs.
 the pre-change baseline) before the LLM review. Blocks using `this` stay single-file
 only. After a rewrite, imports the file no longer references are pruned, so callers
-never keep stale imports of helpers they only reach through a newer one.
+never keep stale imports of helpers they only reach through a newer one. New shared
+modules inherit the leading `// deno-lint-ignore-file` directives of the files whose
+code they carry (union, verbatim, deduplicated) — the moved code already had its
+lint suppressions, and the module must not start failing rules the sources passed.
 
 Skipped when:
 
@@ -420,6 +432,7 @@ src/cli.ts                 Entry point: reads stdin, calls run()
                 ├── src/llm.ts     createLLMClient(): Moonshot AI integration
                 │
                 ├── src/type_checker.ts  TypeCheckerImpl: TypeScript type checking
+                ├── src/formatter.ts  OutputFormatter: deno fmt gate for written files
                 │
                 └── src/engine.ts  runRefactors(): chains refactors sequentially
                         │

@@ -18,6 +18,7 @@ const testConfigBase: Config = {
     duplicate_extractor_retries: 2,
     duplicate_extractor_shared_dir: "common",
     duplicate_extractor_cross_file: true,
+    format_output: false,
     provider: "moonshot",
     model: "kimi-k2.5",
     enabled_refactors: [],
@@ -973,6 +974,7 @@ Deno.test("LLMStats and MoonshotClient full coverage in main process", async () 
         duplicate_extractor_retries: 2,
         duplicate_extractor_shared_dir: "common",
         duplicate_extractor_cross_file: true,
+        format_output: false,
         provider: "moonshot",
         model: "m",
         enabled_refactors: [],
@@ -1322,3 +1324,209 @@ Deno.test("runCrossFilePass is a no-op with no refactors or files", async () => 
         false,
     );
 });
+
+Deno.test(
+    "runCrossFilePass formats new files and rewrites of fmt-clean originals",
+    async () => {
+        const tempDir = await Deno.makeTempDir();
+        // a.ts is fmt-clean before the run; b.ts is not.
+        await Deno.writeTextFile(`${tempDir}/a.ts`, "const original = 1;\n");
+        await Deno.writeTextFile(`${tempDir}/b.ts`, "const original=1;\n");
+
+        const stub = {
+            name: "stub_cross",
+            // deno-lint-ignore require-await
+            refactor: async () => ({
+                modified: new Map([
+                    ["a.ts", "const rewritten=2;\n"],
+                    ["b.ts", "const other=3;\n"],
+                ]),
+                created: new Map([
+                    ["common/helper.ts", "export const helper=3;\n"],
+                ]),
+                changed: true,
+                description: "stub: extracted helper into common/helper.ts",
+            }),
+        };
+
+        try {
+            await runCrossFilePass(
+                [stub],
+                [
+                    { file: "a.ts", ranges: [{ start: 1, end: 1 }] },
+                    { file: "b.ts", ranges: [{ start: 1, end: 1 }] },
+                ],
+                tempDir,
+                { ...testConfigBase, format_output: true },
+                () => {},
+                () => {},
+            );
+
+            // Clean original: the rewrite is formatted (it is ours now).
+            assertEquals(
+                await Deno.readTextFile(`${tempDir}/a.ts`),
+                "const rewritten = 2;\n",
+            );
+            // Off-format original: the rewrite is left as generated, so
+            // dripbird never reformats code it did not touch.
+            assertEquals(
+                await Deno.readTextFile(`${tempDir}/b.ts`),
+                "const other=3;\n",
+            );
+            // New files are entirely ours: always formatted.
+            assertEquals(
+                await Deno.readTextFile(`${tempDir}/common/helper.ts`),
+                "export const helper = 3;\n",
+            );
+        } finally {
+            await Deno.remove(tempDir, { recursive: true });
+        }
+    },
+);
+
+Deno.test(
+    "runCrossFilePass writes verbatim output when formatting is disabled",
+    async () => {
+        const tempDir = await Deno.makeTempDir();
+        await Deno.writeTextFile(`${tempDir}/a.ts`, "const original = 1;\n");
+
+        const stub = {
+            name: "stub_cross",
+            // deno-lint-ignore require-await
+            refactor: async () => ({
+                modified: new Map([["a.ts", "const rewritten=2;\n"]]),
+                created: new Map([
+                    ["common/helper.ts", "export const helper=3;\n"],
+                ]),
+                changed: true,
+                description: "stub: extracted helper",
+            }),
+        };
+
+        try {
+            await runCrossFilePass(
+                [stub],
+                [{ file: "a.ts", ranges: [{ start: 1, end: 1 }] }],
+                tempDir,
+                { ...testConfigBase, format_output: false },
+                () => {},
+                () => {},
+            );
+
+            assertEquals(
+                await Deno.readTextFile(`${tempDir}/a.ts`),
+                "const rewritten=2;\n",
+            );
+            assertEquals(
+                await Deno.readTextFile(`${tempDir}/common/helper.ts`),
+                "export const helper=3;\n",
+            );
+        } finally {
+            await Deno.remove(tempDir, { recursive: true });
+        }
+    },
+);
+
+Deno.test(
+    "runInDir leaves rewrites of off-format originals untouched",
+    async () => {
+        const originalEnv = Deno.env.get("MOONSHOT_API_KEY");
+        Deno.env.delete("MOONSHOT_API_KEY");
+        const tempDir = await Deno.makeTempDir();
+        const filePath = `${tempDir}/test.ts`;
+        await Deno.writeTextFile(
+            filePath,
+            "if (!a) {b();} else {c();}\n",
+        );
+
+        const diff = [
+            "--- a/test.ts",
+            "+++ b/test.ts",
+            "@@ -1,2 +1,2 @@",
+            " if (!a) {b();} else {c();}",
+        ].join("\n");
+
+        const exitCode = await runInDir(diff, tempDir);
+        assertEquals(exitCode, 1);
+
+        // if_not_else flips the negation and preserves the compact
+        // style; formatting is skipped because the original was not
+        // fmt-clean (deno fmt would have expanded it to brace-less
+        // multi-line statements).
+        assertEquals(
+            await Deno.readTextFile(filePath),
+            "if (a) {c();} else {b();}\n",
+        );
+
+        await Deno.remove(tempDir, { recursive: true });
+        if (originalEnv) Deno.env.set("MOONSHOT_API_KEY", originalEnv);
+    },
+);
+
+Deno.test(
+    "runInDir formats rewrites of fmt-clean originals",
+    async () => {
+        const originalEnv = Deno.env.get("MOONSHOT_API_KEY");
+        Deno.env.delete("MOONSHOT_API_KEY");
+        const tempDir = await Deno.makeTempDir();
+        const filePath = `${tempDir}/test.ts`;
+        // 2-space indent: deno fmt's default style (no deno.json in the
+        // temp dir), so the original counts as fmt-clean.
+        await Deno.writeTextFile(
+            filePath,
+            "if (!a) {\n  b();\n} else {\n  c();\n}\n",
+        );
+
+        const diff = [
+            "--- a/test.ts",
+            "+++ b/test.ts",
+            "@@ -1,5 +1,5 @@",
+            " if (!a) {",
+        ].join("\n");
+
+        const exitCode = await runInDir(diff, tempDir);
+        assertEquals(exitCode, 1);
+
+        // The original was fmt-clean, so the rewrite is formatted: the
+        // flipped if stays deno-fmt shaped (same shape in, same shape
+        // out — the point is the write went through the formatter).
+        const modified = await Deno.readTextFile(filePath);
+        assert(modified.includes("if (a)"));
+        assert(!modified.includes("if (!a)"));
+
+        await Deno.remove(tempDir, { recursive: true });
+        if (originalEnv) Deno.env.set("MOONSHOT_API_KEY", originalEnv);
+    },
+);
+
+Deno.test(
+    "runInDir skips formatting entirely when format_output is false",
+    async () => {
+        const originalEnv = Deno.env.get("MOONSHOT_API_KEY");
+        Deno.env.delete("MOONSHOT_API_KEY");
+        const tempDir = await Deno.makeTempDir();
+        const filePath = `${tempDir}/test.ts`;
+        await Deno.writeTextFile(
+            filePath,
+            "if (!a) {\n    b();\n} else {\n    c();\n}\n",
+        );
+        Deno.writeTextFileSync(
+            `${tempDir}/dripbird.yml`,
+            "format_output: false\n",
+        );
+
+        const diff = [
+            "--- a/test.ts",
+            "+++ b/test.ts",
+            "@@ -1,5 +1,5 @@",
+            " if (!a) {",
+        ].join("\n");
+
+        const exitCode = await runInDir(diff, tempDir);
+        assertEquals(exitCode, 1);
+        assert((await Deno.readTextFile(filePath)).includes("if (a)"));
+
+        await Deno.remove(tempDir, { recursive: true });
+        if (originalEnv) Deno.env.set("MOONSHOT_API_KEY", originalEnv);
+    },
+);

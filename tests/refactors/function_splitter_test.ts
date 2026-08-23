@@ -85,6 +85,7 @@ const defaultConfig = {
     duplicate_extractor_retries: 2,
     duplicate_extractor_shared_dir: "common",
     duplicate_extractor_cross_file: true,
+    format_output: false,
     provider: "moonshot",
     model: "kimi-k2.5",
     enabled_refactors: [],
