@@ -13,6 +13,9 @@
  *
  * Formatting runs `deno fmt` as a subprocess in the target directory, so
  * the repo's own `deno.json` fmt settings (line width, quotes, ...) apply.
+ * This requires run access to the `deno` binary — the `install` task grants
+ * `--allow-run=deno` for exactly this; without it every call degrades to
+ * "skip formatting" (verified live: NotCapable at e0ce873).
  * Every failure mode — non-zero exit (syntax error, excluded path, no
  * formatter for the extension), unspawnable binary, non-formattable
  * extension — degrades to "skip formatting", never to losing output.
