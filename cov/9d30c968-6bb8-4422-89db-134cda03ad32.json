@@ -1,0 +1,39 @@
+{
+  "scriptId": "368",
+  "url": "file:///home/pcupka/.cache/deno/npm/registry.npmjs.org/ast-types/0.16.1/lib/def/es2018.js",
+  "functions": [
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 0,
+          "endOffset": 1396,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "default_1",
+      "ranges": [
+        {
+          "startOffset": 289,
+          "endOffset": 1261,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 1329,
+          "endOffset": 1359,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    }
+  ]
+}

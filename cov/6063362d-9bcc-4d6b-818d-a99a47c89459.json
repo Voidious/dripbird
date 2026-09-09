@@ -1,0 +1,61 @@
+{
+  "scriptId": "399",
+  "url": "file:///home/pcupka/.cache/deno/npm/registry.npmjs.org/source-map/0.6.1/lib/quick-sort.js",
+  "functions": [
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 0,
+          "endOffset": 3616,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "swap",
+      "ranges": [
+        {
+          "startOffset": 1107,
+          "endOffset": 1192,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "randomIntInRange",
+      "ranges": [
+        {
+          "startOffset": 1402,
+          "endOffset": 1501,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "doQuickSort",
+      "ranges": [
+        {
+          "startOffset": 1783,
+          "endOffset": 3301,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "exports.quickSort",
+      "ranges": [
+        {
+          "startOffset": 3533,
+          "endOffset": 3614,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    }
+  ]
+}

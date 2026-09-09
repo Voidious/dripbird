@@ -1,0 +1,22 @@
+{
+  "scriptId": "406",
+  "url": "file:///home/pcupka/.cache/deno/npm/registry.npmjs.org/typescript/5.9.3/lib/typescript.js",
+  "functions": [
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 0,
+          "endOffset": 151827,
+          "count": 1
+        },
+        {
+          "startOffset": 189,
+          "endOffset": 321,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": true
+    }
+  ]
+}

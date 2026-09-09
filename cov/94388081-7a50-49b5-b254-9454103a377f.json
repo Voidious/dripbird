@@ -1,0 +1,127 @@
+{
+  "scriptId": "390",
+  "url": "file:///home/pcupka/.cache/deno/npm/registry.npmjs.org/source-map/0.6.1/lib/source-map-generator.js",
+  "functions": [
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 0,
+          "endOffset": 14356,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "SourceMapGenerator",
+      "ranges": [
+        {
+          "startOffset": 676,
+          "endOffset": 1066,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "SourceMapGenerator_fromSourceMap",
+      "ranges": [
+        {
+          "startOffset": 1269,
+          "endOffset": 2690,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "SourceMapGenerator_addMapping",
+      "ranges": [
+        {
+          "startOffset": 3228,
+          "endOffset": 4140,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "SourceMapGenerator_setSourceContent",
+      "ranges": [
+        {
+          "startOffset": 4246,
+          "endOffset": 5137,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "SourceMapGenerator_applySourceMap",
+      "ranges": [
+        {
+          "startOffset": 6124,
+          "endOffset": 8836,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "SourceMapGenerator_validateMapping",
+      "ranges": [
+        {
+          "startOffset": 9271,
+          "endOffset": 10865,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "SourceMapGenerator_serializeMappings",
+      "ranges": [
+        {
+          "startOffset": 11038,
+          "endOffset": 12997,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "SourceMapGenerator_generateSourcesContent",
+      "ranges": [
+        {
+          "startOffset": 13057,
+          "endOffset": 13526,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "SourceMapGenerator_toJSON",
+      "ranges": [
+        {
+          "startOffset": 13608,
+          "endOffset": 14111,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "SourceMapGenerator_toString",
+      "ranges": [
+        {
+          "startOffset": 14218,
+          "endOffset": 14304,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    }
+  ]
+}

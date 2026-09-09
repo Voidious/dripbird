@@ -11,13 +11,16 @@ import {
     createCrossFileDuplicateExtractor,
     type CrossFileBlock,
     type CrossFileGroup,
+    filterLintDirectives,
     findCrossFileDuplicateGroups,
     gateCrossFileGroups,
     insertImport,
+    parseLintIgnoreRules,
     pruneOrphanedImports,
     resolveLocalBinding,
     resolveModulePath,
     sharedDirCandidates,
+    tripsLintRule,
 } from "../../src/refactors/duplicate_extractor_cross.ts";
 import type { Config } from "../../src/config.ts";
 import { TypeCheckerImpl } from "../../src/type_checker.ts";
@@ -2847,12 +2850,12 @@ Deno.test("cross-file extractor unions lint directives into the shared module", 
     );
 
     assertEquals(result.changed, true);
-    // Union of both files' directives, verbatim, deduped — above the
-    // export (there are no helper imports for this group).
+    // F4: the helper body has no `any`, so `no-explicit-any` is dropped
+    // (an unused ignore would fail ban-unused-ignore); `no-eval` is not
+    // statically decidable, so it survives — conservative by design.
     assertEquals(
         result.created.get("common/greetUser.ts"),
         [
-            "// deno-lint-ignore-file no-explicit-any",
             "// deno-lint-ignore-file no-eval",
             "export function greetUser(user) {",
             "    const line = `Hi ${user}`;",
@@ -2867,5 +2870,151 @@ Deno.test("cross-file extractor unions lint directives into the shared module", 
         result.modified.get("a.ts")!.startsWith(
             '// deno-lint-ignore-file no-explicit-any\nimport { greetUser } from "./common/greetUser.ts";',
         ),
+    );
+});
+
+Deno.test("cross-file extractor keeps a directive the helper body trips", async () => {
+    const files = filesOf([
+        {
+            file: "a.ts",
+            source: `// deno-lint-ignore-file no-explicit-any\n${sourceA}`,
+        },
+        { file: "b.ts", source: sourceB },
+    ]);
+
+    const llm: LLMClient = {
+        // deno-lint-ignore require-await
+        async nameFunction() {
+            return "mock";
+        },
+        // deno-lint-ignore require-await
+        async verifyFunctionMatch() {
+            return { isMatch: false, reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateCallReplacement() {
+            return "";
+        },
+        // deno-lint-ignore require-await
+        async reviewChange() {
+            return { accepted: true, feedback: "" };
+        },
+        // deno-lint-ignore require-await
+        async verifyDuplicateMatch() {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateExtraction() {
+            return { helperName: "", helperFunction: "", callSites: [] };
+        },
+        // deno-lint-ignore require-await
+        async verifyCrossFileDuplicateMatch() {
+            return { isMatch: true, excludeIndices: [], reason: "ok" };
+        },
+        // deno-lint-ignore require-await
+        async generateCrossFileExtraction() {
+            return {
+                helperName: "greetUser",
+                helperFunction:
+                    "function greetUser(user: any) {\n    const line = `Hi ${user}`;\n    logger.log(line);\n}\n",
+                callSites: ["    greetUser(user);\n", "    greetUser(name);\n"],
+            };
+        },
+        // deno-lint-ignore require-await
+        async reviewCrossFileChange() {
+            return { accepted: true, feedback: "" };
+        },
+    };
+
+    const result = await createCrossFileDuplicateExtractor(testConfig, llm)(
+        files,
+        {
+            baseDir: "/base",
+            log: () => {},
+            readFile: () => Promise.resolve(null),
+        },
+    );
+
+    assertEquals(result.changed, true);
+    assert(
+        result.created.get("common/greetUser.ts")!.startsWith(
+            "// deno-lint-ignore-file no-explicit-any\nexport function greetUser(user: any) {",
+        ),
+    );
+});
+
+Deno.test("parseLintIgnoreRules lists a directive's rules", () => {
+    assertEquals(
+        parseLintIgnoreRules("// deno-lint-ignore-file no-explicit-any"),
+        ["no-explicit-any"],
+    );
+    assertEquals(
+        parseLintIgnoreRules("//  deno-lint-ignore-file no-eval no-window"),
+        ["no-eval", "no-window"],
+    );
+    assertEquals(parseLintIgnoreRules("// deno-lint-ignore-file"), []);
+});
+
+Deno.test("tripsLintRule detects no-explicit-any via the AST only", () => {
+    assertEquals(tripsLintRule("const a: any = 1;\n", "no-explicit-any"), true);
+    assertEquals(
+        tripsLintRule("function f<T = any>(x: T) {}\n", "no-explicit-any"),
+        true,
+    );
+    // Not type positions: identifier, string, comment, property name.
+    assertEquals(
+        tripsLintRule(
+            'const any = "any"; // deno-lint-ignore-file any\nconst o = { any: 1 };\n',
+            "no-explicit-any",
+        ),
+        false,
+    );
+    // Other rules are not statically decidable.
+    assertEquals(tripsLintRule("eval(1);\n", "no-eval"), null);
+    assertEquals(tripsLintRule("const x = 1;\n", "no-explicit-any"), false);
+    // Undecidable when the body does not parse (caller's parse check
+    // rejects such modules anyway).
+    assertEquals(tripsLintRule("function f({\n", "no-explicit-any"), null);
+});
+
+Deno.test("filterLintDirectives drops only provably unused directives", () => {
+    const body = "export function f(x: any) {}\n";
+    // Tripped and unknown rules survive verbatim.
+    assertEquals(
+        filterLintDirectives(
+            [
+                "// deno-lint-ignore-file no-explicit-any",
+                "//  deno-lint-ignore-file no-eval",
+            ],
+            body,
+        ),
+        [
+            "// deno-lint-ignore-file no-explicit-any",
+            "//  deno-lint-ignore-file no-eval",
+        ],
+    );
+    // Nothing trips the only rule: directive dropped entirely.
+    assertEquals(
+        filterLintDirectives(
+            ["// deno-lint-ignore-file no-explicit-any"],
+            "export function f(x: number) {}\n",
+        ),
+        [],
+    );
+    // Multi-rule directive rebuilt with only the surviving rules.
+    assertEquals(
+        filterLintDirectives(
+            ["// deno-lint-ignore-file no-explicit-any no-eval"],
+            "export function f(x: number) {}\n",
+        ),
+        ["// deno-lint-ignore-file no-eval"],
+    );
+    // Bare directive (suppresses everything) is kept as-is.
+    assertEquals(
+        filterLintDirectives(
+            ["// deno-lint-ignore-file"],
+            "export function f(x: number) {}\n",
+        ),
+        ["// deno-lint-ignore-file"],
     );
 });

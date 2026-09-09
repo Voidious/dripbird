@@ -1,0 +1,195 @@
+{
+  "scriptId": "403",
+  "url": "file:///home/pcupka/.cache/deno/npm/registry.npmjs.org/recast/0.23.11/lib/patcher.js",
+  "functions": [
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 0,
+          "endOffset": 16121,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "Patcher",
+      "ranges": [
+        {
+          "startOffset": 829,
+          "endOffset": 2328,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "Pp.tryToReprintComments",
+      "ranges": [
+        {
+          "startOffset": 2411,
+          "endOffset": 3627,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "getSurroundingComments",
+      "ranges": [
+        {
+          "startOffset": 3813,
+          "endOffset": 4123,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "Pp.deleteComments",
+      "ranges": [
+        {
+          "startOffset": 4144,
+          "endOffset": 4931,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "getReprinter",
+      "ranges": [
+        {
+          "startOffset": 4933,
+          "endOffset": 8031,
+          "count": 4394
+        },
+        {
+          "startOffset": 5226,
+          "endOffset": 5233,
+          "count": 1296
+        },
+        {
+          "startOffset": 5233,
+          "endOffset": 5287,
+          "count": 3098
+        },
+        {
+          "startOffset": 5287,
+          "endOffset": 5298,
+          "count": 0
+        },
+        {
+          "startOffset": 5324,
+          "endOffset": 5340,
+          "count": 0
+        },
+        {
+          "startOffset": 5380,
+          "endOffset": 5412,
+          "count": 0
+        },
+        {
+          "startOffset": 5422,
+          "endOffset": 5429,
+          "count": 3098
+        },
+        {
+          "startOffset": 5429,
+          "endOffset": 8030,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 5441,
+          "endOffset": 8028,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "needsLeadingSpace",
+      "ranges": [
+        {
+          "startOffset": 8289,
+          "endOffset": 8843,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "needsTrailingSpace",
+      "ranges": [
+        {
+          "startOffset": 9063,
+          "endOffset": 9571,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "findReprints",
+      "ranges": [
+        {
+          "startOffset": 9572,
+          "endOffset": 10179,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "findAnyReprints",
+      "ranges": [
+        {
+          "startOffset": 10180,
+          "endOffset": 10570,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "findArrayReprints",
+      "ranges": [
+        {
+          "startOffset": 10571,
+          "endOffset": 11329,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "findObjectReprints",
+      "ranges": [
+        {
+          "startOffset": 11330,
+          "endOffset": 14221,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "findChildReprints",
+      "ranges": [
+        {
+          "startOffset": 14222,
+          "endOffset": 16120,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "scriptId": "394",
+  "url": "file:///home/pcupka/.cache/deno/npm/registry.npmjs.org/source-map/0.6.1/lib/binary-search.js",
+  "functions": [
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 0,
+          "endOffset": 4249,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "recursiveSearch",
+      "ranges": [
+        {
+          "startOffset": 931,
+          "endOffset": 2523,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "search",
+      "ranges": [
+        {
+          "startOffset": 3578,
+          "endOffset": 4247,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    }
+  ]
+}

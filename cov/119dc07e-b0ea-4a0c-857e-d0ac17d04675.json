@@ -1,0 +1,133 @@
+{
+  "scriptId": "311",
+  "url": "file:///tmp/opencode/dripbird-f4/src/formatter.ts",
+  "functions": [
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 0,
+          "endOffset": 2828,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "formattableExt",
+      "ranges": [
+        {
+          "startOffset": 1519,
+          "endOffset": 1749,
+          "count": 20
+        },
+        {
+          "startOffset": 1604,
+          "endOffset": 1616,
+          "count": 2
+        },
+        {
+          "startOffset": 1616,
+          "endOffset": 1734,
+          "count": 18
+        },
+        {
+          "startOffset": 1734,
+          "endOffset": 1739,
+          "count": 13
+        },
+        {
+          "startOffset": 1740,
+          "endOffset": 1746,
+          "count": 5
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "denoCommandRunner",
+      "ranges": [
+        {
+          "startOffset": 1832,
+          "endOffset": 1950,
+          "count": 4
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "createOutputFormatter",
+      "ranges": [
+        {
+          "startOffset": 2108,
+          "endOffset": 2827,
+          "count": 7
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "fmtExit",
+      "ranges": [
+        {
+          "startOffset": 2189,
+          "endOffset": 2497,
+          "count": 9
+        },
+        {
+          "startOffset": 2389,
+          "endOffset": 2415,
+          "count": 7
+        },
+        {
+          "startOffset": 2415,
+          "endOffset": 2493,
+          "count": 2
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "isClean",
+      "ranges": [
+        {
+          "startOffset": 2514,
+          "endOffset": 2674,
+          "count": 6
+        },
+        {
+          "startOffset": 2578,
+          "endOffset": 2591,
+          "count": 1
+        },
+        {
+          "startOffset": 2591,
+          "endOffset": 2673,
+          "count": 5
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "format",
+      "ranges": [
+        {
+          "startOffset": 2680,
+          "endOffset": 2820,
+          "count": 5
+        },
+        {
+          "startOffset": 2743,
+          "endOffset": 2756,
+          "count": 1
+        },
+        {
+          "startOffset": 2756,
+          "endOffset": 2819,
+          "count": 4
+        }
+      ],
+      "isBlockCoverage": true
+    }
+  ]
+}

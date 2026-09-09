@@ -1,0 +1,248 @@
+{
+  "scriptId": "354",
+  "url": "file:///home/pcupka/.cache/deno/npm/registry.npmjs.org/ast-types/0.16.1/lib/path.js",
+  "functions": [
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 0,
+          "endOffset": 11788,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "pathPlugin",
+      "ranges": [
+        {
+          "startOffset": 263,
+          "endOffset": 11654,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "Path",
+      "ranges": [
+        {
+          "startOffset": 439,
+          "endOffset": 1399,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "getChildCache",
+      "ranges": [
+        {
+          "startOffset": 1434,
+          "endOffset": 1693,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "getChildPath",
+      "ranges": [
+        {
+          "startOffset": 1698,
+          "endOffset": 2157,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "getValueProperty",
+      "ranges": [
+        {
+          "startOffset": 2298,
+          "endOffset": 2370,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "get",
+      "ranges": [
+        {
+          "startOffset": 2385,
+          "endOffset": 2717,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "each",
+      "ranges": [
+        {
+          "startOffset": 2733,
+          "endOffset": 3577,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "map",
+      "ranges": [
+        {
+          "startOffset": 3592,
+          "endOffset": 3798,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "filter",
+      "ranges": [
+        {
+          "startOffset": 3816,
+          "endOffset": 4072,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "emptyMoves",
+      "ranges": [
+        {
+          "startOffset": 4078,
+          "endOffset": 4103,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "getMoves",
+      "ranges": [
+        {
+          "startOffset": 4108,
+          "endOffset": 5662,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "shift",
+      "ranges": [
+        {
+          "startOffset": 5678,
+          "endOffset": 5821,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "unshift",
+      "ranges": [
+        {
+          "startOffset": 5840,
+          "endOffset": 6145,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "push",
+      "ranges": [
+        {
+          "startOffset": 6161,
+          "endOffset": 6446,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "pop",
+      "ranges": [
+        {
+          "startOffset": 6461,
+          "endOffset": 6667,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "insertAt",
+      "ranges": [
+        {
+          "startOffset": 6687,
+          "endOffset": 7069,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "insertBefore",
+      "ranges": [
+        {
+          "startOffset": 7093,
+          "endOffset": 7500,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "insertAfter",
+      "ranges": [
+        {
+          "startOffset": 7523,
+          "endOffset": 7933,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "repairRelationshipWithParent",
+      "ranges": [
+        {
+          "startOffset": 7939,
+          "endOffset": 9368,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "replace",
+      "ranges": [
+        {
+          "startOffset": 9386,
+          "endOffset": 11634,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 11723,
+          "endOffset": 11753,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    }
+  ]
+}

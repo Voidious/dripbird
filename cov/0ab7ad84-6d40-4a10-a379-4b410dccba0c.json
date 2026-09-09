@@ -1,0 +1,314 @@
+{
+  "scriptId": "391",
+  "url": "file:///home/pcupka/.cache/deno/npm/registry.npmjs.org/source-map/0.6.1/lib/source-map-consumer.js",
+  "functions": [
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 0,
+          "endOffset": 40562,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "SourceMapConsumer",
+      "ranges": [
+        {
+          "startOffset": 426,
+          "endOffset": 769,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "SourceMapConsumer.fromSourceMap",
+      "ranges": [
+        {
+          "startOffset": 805,
+          "endOffset": 918,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "get",
+      "ranges": [
+        {
+          "startOffset": 2628,
+          "endOffset": 2786,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "get",
+      "ranges": [
+        {
+          "startOffset": 2970,
+          "endOffset": 3126,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "SourceMapConsumer_charIsMappingSeparator",
+      "ranges": [
+        {
+          "startOffset": 3188,
+          "endOffset": 3323,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "SourceMapConsumer_parseMappings",
+      "ranges": [
+        {
+          "startOffset": 3567,
+          "endOffset": 3697,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "SourceMapConsumer_eachMapping",
+      "ranges": [
+        {
+          "startOffset": 4634,
+          "endOffset": 5706,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "SourceMapConsumer_allGeneratedPositionsFor",
+      "ranges": [
+        {
+          "startOffset": 6792,
+          "endOffset": 9416,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "BasicSourceMapConsumer",
+      "ranges": [
+        {
+          "startOffset": 10950,
+          "endOffset": 13394,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "BasicSourceMapConsumer._findSourceIndex",
+      "ranges": [
+        {
+          "startOffset": 13679,
+          "endOffset": 14207,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "SourceMapConsumer_fromSourceMap",
+      "ranges": [
+        {
+          "startOffset": 14544,
+          "endOffset": 16555,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "get",
+      "ranges": [
+        {
+          "startOffset": 16796,
+          "endOffset": 16855,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "Mapping",
+      "ranges": [
+        {
+          "startOffset": 16922,
+          "endOffset": 17098,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "SourceMapConsumer_parseMappings",
+      "ranges": [
+        {
+          "startOffset": 17346,
+          "endOffset": 20551,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "SourceMapConsumer_findMapping",
+      "ranges": [
+        {
+          "startOffset": 20750,
+          "endOffset": 21569,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "SourceMapConsumer_computeColumnSpans",
+      "ranges": [
+        {
+          "startOffset": 21724,
+          "endOffset": 22603,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "SourceMapConsumer_originalPositionFor",
+      "ranges": [
+        {
+          "startOffset": 23769,
+          "endOffset": 25022,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "BasicSourceMapConsumer_hasContentsOfAllSources",
+      "ranges": [
+        {
+          "startOffset": 25195,
+          "endOffset": 25452,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "SourceMapConsumer_sourceContentFor",
+      "ranges": [
+        {
+          "startOffset": 25678,
+          "endOffset": 27289,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "SourceMapConsumer_generatedPositionFor",
+      "ranges": [
+        {
+          "startOffset": 28401,
+          "endOffset": 29507,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "IndexedSourceMapConsumer",
+      "ranges": [
+        {
+          "startOffset": 31455,
+          "endOffset": 32949,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "get",
+      "ranges": [
+        {
+          "startOffset": 33343,
+          "endOffset": 33607,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "IndexedSourceMapConsumer_originalPositionFor",
+      "ranges": [
+        {
+          "startOffset": 34426,
+          "endOffset": 35605,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "IndexedSourceMapConsumer_hasContentsOfAllSources",
+      "ranges": [
+        {
+          "startOffset": 35780,
+          "endOffset": 35951,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "IndexedSourceMapConsumer_sourceContentFor",
+      "ranges": [
+        {
+          "startOffset": 36179,
+          "endOffset": 36618,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "IndexedSourceMapConsumer_generatedPositionFor",
+      "ranges": [
+        {
+          "startOffset": 37381,
+          "endOffset": 38292,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "IndexedSourceMapConsumer_parseMappings",
+      "ranges": [
+        {
+          "startOffset": 38543,
+          "endOffset": 40498,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    }
+  ]
+}

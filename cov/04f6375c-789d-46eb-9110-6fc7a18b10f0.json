@@ -1,0 +1,39 @@
+{
+  "scriptId": "371",
+  "url": "file:///home/pcupka/.cache/deno/npm/registry.npmjs.org/ast-types/0.16.1/lib/def/es2020.js",
+  "functions": [
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 0,
+          "endOffset": 2108,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "default_1",
+      "ranges": [
+        {
+          "startOffset": 360,
+          "endOffset": 1973,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 2041,
+          "endOffset": 2071,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    }
+  ]
+}

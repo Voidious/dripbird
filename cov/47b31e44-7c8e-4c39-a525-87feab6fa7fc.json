@@ -1,0 +1,305 @@
+{
+  "scriptId": "359",
+  "url": "file:///home/pcupka/.cache/deno/npm/registry.npmjs.org/ast-types/0.16.1/lib/node-path.js",
+  "functions": [
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 0,
+          "endOffset": 15601,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "nodePathPlugin",
+      "ranges": [
+        {
+          "startOffset": 320,
+          "endOffset": 15458,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "NodePath",
+      "ranges": [
+        {
+          "startOffset": 646,
+          "endOffset": 884,
+          "count": 138
+        },
+        {
+          "startOffset": 732,
+          "endOffset": 828,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "get",
+      "ranges": [
+        {
+          "startOffset": 1181,
+          "endOffset": 1403,
+          "count": 22
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "get",
+      "ranges": [
+        {
+          "startOffset": 1450,
+          "endOffset": 1678,
+          "count": 14
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "get",
+      "ranges": [
+        {
+          "startOffset": 1724,
+          "endOffset": 1949,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "NPp.replace",
+      "ranges": [
+        {
+          "startOffset": 1986,
+          "endOffset": 2148,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "NPp.prune",
+      "ranges": [
+        {
+          "startOffset": 2166,
+          "endOffset": 2312,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "NPp._computeNode",
+      "ranges": [
+        {
+          "startOffset": 2404,
+          "endOffset": 2598,
+          "count": 22
+        },
+        {
+          "startOffset": 2520,
+          "endOffset": 2583,
+          "count": 0
+        },
+        {
+          "startOffset": 2584,
+          "endOffset": 2591,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "NPp._computeParent",
+      "ranges": [
+        {
+          "startOffset": 2703,
+          "endOffset": 3125,
+          "count": 14
+        },
+        {
+          "startOffset": 2817,
+          "endOffset": 3002,
+          "count": 0
+        },
+        {
+          "startOffset": 3021,
+          "endOffset": 3047,
+          "count": 18
+        },
+        {
+          "startOffset": 3049,
+          "endOffset": 3092,
+          "count": 4
+        },
+        {
+          "startOffset": 3111,
+          "endOffset": 3118,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "NPp._computeScope",
+      "ranges": [
+        {
+          "startOffset": 3210,
+          "endOffset": 3494,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "NPp.getValueProperty",
+      "ranges": [
+        {
+          "startOffset": 3523,
+          "endOffset": 3600,
+          "count": 132
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "NPp.needsParens",
+      "ranges": [
+        {
+          "startOffset": 4255,
+          "endOffset": 9578,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "isBinary",
+      "ranges": [
+        {
+          "startOffset": 9584,
+          "endOffset": 9709,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "isUnaryLike",
+      "ranges": [
+        {
+          "startOffset": 9794,
+          "endOffset": 10157,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 10432,
+          "endOffset": 10539,
+          "count": 10
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 10474,
+          "endOffset": 10531,
+          "count": 23
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "containsCallExpression",
+      "ranges": [
+        {
+          "startOffset": 10546,
+          "endOffset": 10972,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "NPp.canBeFirstInStatement",
+      "ranges": [
+        {
+          "startOffset": 11005,
+          "endOffset": 11151,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "NPp.firstInStatement",
+      "ranges": [
+        {
+          "startOffset": 11180,
+          "endOffset": 11238,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "firstInStatement",
+      "ranges": [
+        {
+          "startOffset": 11244,
+          "endOffset": 13668,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "cleanUpNodesAfterPrune",
+      "ranges": [
+        {
+          "startOffset": 13790,
+          "endOffset": 14504,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "cleanUpIfStatementAfterPrune",
+      "ranges": [
+        {
+          "startOffset": 14509,
+          "endOffset": 15435,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 15531,
+          "endOffset": 15561,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    }
+  ]
+}

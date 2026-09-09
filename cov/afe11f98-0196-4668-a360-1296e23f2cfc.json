@@ -1,0 +1,22 @@
+{
+  "scriptId": "311",
+  "url": "file:///home/pcupka/.cache/deno/npm/registry.npmjs.org/recast/0.23.11/main.js",
+  "functions": [
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 0,
+          "endOffset": 774,
+          "count": 1
+        },
+        {
+          "startOffset": 189,
+          "endOffset": 309,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": true
+    }
+  ]
+}

@@ -1,0 +1,548 @@
+{
+  "scriptId": "388",
+  "url": "file:///home/pcupka/.cache/deno/npm/registry.npmjs.org/ast-types/0.16.1/lib/path-visitor.js",
+  "functions": [
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 0,
+          "endOffset": 13721,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "pathVisitorPlugin",
+      "ranges": [
+        {
+          "startOffset": 317,
+          "endOffset": 13572,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "PathVisitor",
+      "ranges": [
+        {
+          "startOffset": 626,
+          "endOffset": 1282,
+          "count": 23490
+        },
+        {
+          "startOffset": 695,
+          "endOffset": 794,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "computeMethodNameTable",
+      "ranges": [
+        {
+          "startOffset": 1288,
+          "endOffset": 2120,
+          "count": 23490
+        },
+        {
+          "startOffset": 1416,
+          "endOffset": 1559,
+          "count": 285743
+        },
+        {
+          "startOffset": 1466,
+          "endOffset": 1549,
+          "count": 50843
+        },
+        {
+          "startOffset": 1839,
+          "endOffset": 2082,
+          "count": 71477
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "fromMethodsObject",
+      "ranges": [
+        {
+          "startOffset": 2157,
+          "endOffset": 2923,
+          "count": 46623
+        },
+        {
+          "startOffset": 2239,
+          "endOffset": 2278,
+          "count": 23133
+        },
+        {
+          "startOffset": 2278,
+          "endOffset": 2317,
+          "count": 23490
+        },
+        {
+          "startOffset": 2317,
+          "endOffset": 2397,
+          "count": 0
+        },
+        {
+          "startOffset": 2397,
+          "endOffset": 2922,
+          "count": 23490
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "Visitor",
+      "ranges": [
+        {
+          "startOffset": 2420,
+          "endOffset": 2634,
+          "count": 23490
+        },
+        {
+          "startOffset": 2485,
+          "endOffset": 2588,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "extend",
+      "ranges": [
+        {
+          "startOffset": 2929,
+          "endOffset": 3156,
+          "count": 70470
+        },
+        {
+          "startOffset": 3000,
+          "endOffset": 3127,
+          "count": 215273
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "visit",
+      "ranges": [
+        {
+          "startOffset": 3181,
+          "endOffset": 3285,
+          "count": 23490
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "PVp.visit",
+      "ranges": [
+        {
+          "startOffset": 3340,
+          "endOffset": 5034,
+          "count": 23490
+        },
+        {
+          "startOffset": 3382,
+          "endOffset": 3561,
+          "count": 0
+        },
+        {
+          "startOffset": 4335,
+          "endOffset": 4358,
+          "count": 0
+        },
+        {
+          "startOffset": 4360,
+          "endOffset": 4997,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "AbortRequest",
+      "ranges": [
+        {
+          "startOffset": 5059,
+          "endOffset": 5086,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "PVp.abort",
+      "ranges": [
+        {
+          "startOffset": 5104,
+          "endOffset": 5577,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "PVp.reset",
+      "ranges": [
+        {
+          "startOffset": 5595,
+          "endOffset": 5717,
+          "count": 23490
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "PVp.visitWithoutReset",
+      "ranges": [
+        {
+          "startOffset": 5747,
+          "endOffset": 6838,
+          "count": 439100
+        },
+        {
+          "startOffset": 5807,
+          "endOffset": 6093,
+          "count": 0
+        },
+        {
+          "startOffset": 6135,
+          "endOffset": 6179,
+          "count": 0
+        },
+        {
+          "startOffset": 6243,
+          "endOffset": 6283,
+          "count": 364368
+        },
+        {
+          "startOffset": 6284,
+          "endOffset": 6329,
+          "count": 146448
+        },
+        {
+          "startOffset": 6330,
+          "endOffset": 6378,
+          "count": 97628
+        },
+        {
+          "startOffset": 6404,
+          "endOffset": 6646,
+          "count": 23133
+        },
+        {
+          "startOffset": 6646,
+          "endOffset": 6832,
+          "count": 415967
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "visitChildren",
+      "ranges": [
+        {
+          "startOffset": 6844,
+          "endOffset": 8310,
+          "count": 439100
+        },
+        {
+          "startOffset": 6925,
+          "endOffset": 6969,
+          "count": 0
+        },
+        {
+          "startOffset": 7017,
+          "endOffset": 7061,
+          "count": 0
+        },
+        {
+          "startOffset": 7128,
+          "endOffset": 7198,
+          "count": 24753
+        },
+        {
+          "startOffset": 7198,
+          "endOffset": 8277,
+          "count": 414347
+        },
+        {
+          "startOffset": 7240,
+          "endOffset": 7288,
+          "count": 292652
+        },
+        {
+          "startOffset": 7288,
+          "endOffset": 8277,
+          "count": 121695
+        },
+        {
+          "startOffset": 7598,
+          "endOffset": 7631,
+          "count": 0
+        },
+        {
+          "startOffset": 7632,
+          "endOffset": 7685,
+          "count": 0
+        },
+        {
+          "startOffset": 7687,
+          "endOffset": 7747,
+          "count": 0
+        },
+        {
+          "startOffset": 7878,
+          "endOffset": 8144,
+          "count": 390499
+        },
+        {
+          "startOffset": 7979,
+          "endOffset": 8076,
+          "count": 53464
+        },
+        {
+          "startOffset": 8194,
+          "endOffset": 8267,
+          "count": 390499
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "PVp.acquireContext",
+      "ranges": [
+        {
+          "startOffset": 8336,
+          "endOffset": 8528,
+          "count": 23133
+        },
+        {
+          "startOffset": 8407,
+          "endOffset": 8461,
+          "count": 23044
+        },
+        {
+          "startOffset": 8461,
+          "endOffset": 8527,
+          "count": 89
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "PVp.releaseContext",
+      "ranges": [
+        {
+          "startOffset": 8555,
+          "endOffset": 8760,
+          "count": 23133
+        },
+        {
+          "startOffset": 8624,
+          "endOffset": 8668,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "PVp.reportChanged",
+      "ranges": [
+        {
+          "startOffset": 8786,
+          "endOffset": 8842,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "PVp.wasChangeReported",
+      "ranges": [
+        {
+          "startOffset": 8872,
+          "endOffset": 8928,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "makeContextConstructor",
+      "ranges": [
+        {
+          "startOffset": 8934,
+          "endOffset": 10042,
+          "count": 23490
+        },
+        {
+          "startOffset": 9679,
+          "endOffset": 9723,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "Context",
+      "ranges": [
+        {
+          "startOffset": 8985,
+          "endOffset": 9631,
+          "count": 23044
+        },
+        {
+          "startOffset": 9054,
+          "endOffset": 9106,
+          "count": 0
+        },
+        {
+          "startOffset": 9155,
+          "endOffset": 9207,
+          "count": 0
+        },
+        {
+          "startOffset": 9253,
+          "endOffset": 9305,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "reset",
+      "ranges": [
+        {
+          "startOffset": 10362,
+          "endOffset": 10700,
+          "count": 89
+        },
+        {
+          "startOffset": 10434,
+          "endOffset": 10486,
+          "count": 0
+        },
+        {
+          "startOffset": 10532,
+          "endOffset": 10584,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "invokeVisitorMethod",
+      "ranges": [
+        {
+          "startOffset": 10762,
+          "endOffset": 12191,
+          "count": 23133
+        },
+        {
+          "startOffset": 10854,
+          "endOffset": 10906,
+          "count": 0
+        },
+        {
+          "startOffset": 10964,
+          "endOffset": 11016,
+          "count": 0
+        },
+        {
+          "startOffset": 11131,
+          "endOffset": 11412,
+          "count": 0
+        },
+        {
+          "startOffset": 11456,
+          "endOffset": 11934,
+          "count": 0
+        },
+        {
+          "startOffset": 11986,
+          "endOffset": 12101,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "traverse",
+      "ranges": [
+        {
+          "startOffset": 12242,
+          "endOffset": 12743,
+          "count": 23133
+        },
+        {
+          "startOffset": 12329,
+          "endOffset": 12381,
+          "count": 0
+        },
+        {
+          "startOffset": 12427,
+          "endOffset": 12479,
+          "count": 0
+        },
+        {
+          "startOffset": 12537,
+          "endOffset": 12589,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "visit",
+      "ranges": [
+        {
+          "startOffset": 12791,
+          "endOffset": 13292,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "reportChanged",
+      "ranges": [
+        {
+          "startOffset": 13340,
+          "endOffset": 13410,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "abort",
+      "ranges": [
+        {
+          "startOffset": 13450,
+          "endOffset": 13545,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 13648,
+          "endOffset": 13678,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    }
+  ]
+}

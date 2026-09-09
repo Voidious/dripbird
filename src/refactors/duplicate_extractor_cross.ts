@@ -25,7 +25,9 @@
  * Shared modules inherit the `// deno-lint-ignore-file` directives of
  * the files their code came from (union, verbatim, deduped): the moved
  * code carries the reason the author suppressed those rules, so the new
- * module must not start failing lint the sources never failed.
+ * module must not start failing lint the sources never failed. A
+ * directive the generated module provably does not trip is not emitted,
+ * so propagation never leaves an unused ignore behind (F4).
  */
 import type { ChangedRange } from "../diff.ts";
 import type { Config } from "../config.ts";
@@ -205,6 +207,77 @@ function firstCodeLineIndex(lines: string[]): number {
 }
 
 const LINT_IGNORE_FILE_RE = /^\/\/\s*deno-lint-ignore-file\b/;
+
+/**
+ * Rule names a file-scoped ignore directive suppresses. Empty for a
+ * bare `// deno-lint-ignore-file` (suppresses every rule).
+ */
+export function parseLintIgnoreRules(directive: string): string[] {
+    return directive.trim().split(/\s+/).slice(2);
+}
+
+/**
+ * Whether `source` trips `rule`, when that is statically decidable
+ * (null = unknown). Only `no-explicit-any` is decidable today: that
+ * rule fires exactly on `any` type annotations, which the AST exposes
+ * as TSAnyKeyword nodes — comments, strings, and identifiers named
+ * `any` never count.
+ */
+export function tripsLintRule(source: string, rule: string): boolean | null {
+    if (rule !== "no-explicit-any") return null;
+    let ast: any;
+    try {
+        ast = parseBare(source);
+    } catch {
+        return null; // caller's parse check rejects invalid modules anyway
+    }
+    let found = false;
+    visit(ast, {
+        visitTSAnyKeyword() {
+            found = true;
+            return false;
+        },
+    });
+    return found;
+}
+
+/**
+ * Directives the module body actually needs (F4): a directive whose
+ * rules the body provably does NOT trip is dropped, so union
+ * propagation cannot emit unused ignores that fail `ban-unused-ignore`
+ * in repos that enable it. Rules that cannot be decided statically
+ * stay suppressed — over-suppression is a cosmetic directive to
+ * delete, losing suppression breaks lint. A multi-rule directive whose
+ * filtering removed rules is rebuilt with the surviving rules;
+ * directives that survive whole stay verbatim.
+ */
+export function filterLintDirectives(
+    directives: string[],
+    body: string,
+): string[] {
+    const kept: string[] = [];
+    for (const directive of directives) {
+        const rules = parseLintIgnoreRules(directive);
+        if (rules.length === 0) {
+            kept.push(directive); // bare directive: suppresses everything
+            continue;
+        }
+        const surviving: string[] = [];
+        let dropped = false;
+        for (const rule of rules) {
+            if (tripsLintRule(body, rule) !== false) {
+                surviving.push(rule);
+            } else {
+                dropped = true;
+            }
+        }
+        if (surviving.length === 0) continue;
+        kept.push(
+            dropped ? `// deno-lint-ignore-file ${surviving.join(" ")}` : directive,
+        );
+    }
+    return kept;
+}
 
 /**
  * `// deno-lint-ignore-file` lines from a file's leading comment block
@@ -982,7 +1055,11 @@ async function extractGroup(
 
     // Union (verbatim, deduped) of the lint-ignore directives of every
     // file whose blocks actually move: the shared module must not start
-    // failing rules the sources suppressed for this very code.
+    // failing rules the sources suppressed for this very code. F4 then
+    // filters that union against the generated body, so a directive the
+    // module provably does not trip (e.g. `no-explicit-any` in a module
+    // without `any`) is not emitted — unused ignores fail
+    // `ban-unused-ignore` in repos that enable it.
     const lintDirectives: string[] = [];
     const seenDirectives = new Set<string>();
     for (const file of new Set(remaining.map((b) => b.file))) {
@@ -1157,12 +1234,19 @@ async function extractGroup(
             /^export\s+/,
             "",
         );
-        const moduleContent =
-            (lintDirectives.length > 0 ? `${lintDirectives.join("\n")}\n` : "") +
-            (helperImports.length > 0
-                ? `${helperImports.map((i) => i.line).join("\n")}\n\n`
-                : "") +
+        const moduleBody = (helperImports.length > 0
+            ? `${
+                helperImports.map((i) => i.line).join("\n")
+            }\n\n`
+            : "") +
             `export ${helperFn}\n`;
+        const moduleDirectives = filterLintDirectives(
+            lintDirectives,
+            moduleBody,
+        );
+        const moduleContent = (moduleDirectives.length > 0
+            ? `${moduleDirectives.join("\n")}\n`
+            : "") + moduleBody;
         try {
             parseBare(moduleContent);
         } catch {

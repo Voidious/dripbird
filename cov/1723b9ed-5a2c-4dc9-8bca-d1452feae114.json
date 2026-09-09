@@ -1,0 +1,33 @@
+{
+  "scriptId": "311",
+  "url": "file:///tmp/opencode/dripbird-f4/src/engine.ts",
+  "functions": [
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 0,
+          "endOffset": 678,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "runRefactors",
+      "ranges": [
+        {
+          "startOffset": 7,
+          "endOffset": 677,
+          "count": 5
+        },
+        {
+          "startOffset": 447,
+          "endOffset": 555,
+          "count": 4
+        }
+      ],
+      "isBlockCoverage": true
+    }
+  ]
+}

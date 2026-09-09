@@ -1,0 +1,1358 @@
+{
+  "scriptId": "309",
+  "url": "file:///tmp/opencode/dripbird-f4/tests/type_checker_test.ts",
+  "functions": [
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 0,
+          "endOffset": 16088,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 222,
+          "endOffset": 346,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 405,
+          "endOffset": 584,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 648,
+          "endOffset": 951,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 698,
+          "endOffset": 743,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 1024,
+          "endOffset": 1798,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "createCompilerHost",
+      "ranges": [
+        {
+          "startOffset": 1216,
+          "endOffset": 1263,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "getSourceFile",
+      "ranges": [
+        {
+          "startOffset": 1246,
+          "endOffset": 1254,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "createSourceFile",
+      "ranges": [
+        {
+          "startOffset": 1287,
+          "endOffset": 1295,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "createProgram",
+      "ranges": [
+        {
+          "startOffset": 1316,
+          "endOffset": 1490,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "getTypeChecker",
+      "ranges": [
+        {
+          "startOffset": 1347,
+          "endOffset": 1443,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "getTypeAtLocation",
+      "ranges": [
+        {
+          "startOffset": 1385,
+          "endOffset": 1393,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "typeToString",
+      "ranges": [
+        {
+          "startOffset": 1421,
+          "endOffset": 1430,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "getSourceFile",
+      "ranges": [
+        {
+          "startOffset": 1468,
+          "endOffset": 1481,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "getPositionOfLineAndCharacter",
+      "ranges": [
+        {
+          "startOffset": 1527,
+          "endOffset": 1532,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "forEachChild",
+      "ranges": [
+        {
+          "startOffset": 1552,
+          "endOffset": 1558,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 1602,
+          "endOffset": 1690,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 1866,
+          "endOffset": 2086,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 2156,
+          "endOffset": 2348,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 2411,
+          "endOffset": 2893,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 2951,
+          "endOffset": 3146,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 3217,
+          "endOffset": 3398,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 3460,
+          "endOffset": 3821,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 3531,
+          "endOffset": 3638,
+          "count": 1
+        },
+        {
+          "startOffset": 3627,
+          "endOffset": 3633,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 3886,
+          "endOffset": 4322,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 3936,
+          "endOffset": 4214,
+          "count": 1
+        },
+        {
+          "startOffset": 4019,
+          "endOffset": 4025,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "ts.createProgram",
+      "ranges": [
+        {
+          "startOffset": 4098,
+          "endOffset": 4194,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 4379,
+          "endOffset": 4687,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 4753,
+          "endOffset": 5170,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 5228,
+          "endOffset": 5687,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 5766,
+          "endOffset": 5947,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 6029,
+          "endOffset": 7237,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "createCompilerHost",
+      "ranges": [
+        {
+          "startOffset": 6221,
+          "endOffset": 6268,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "getSourceFile",
+      "ranges": [
+        {
+          "startOffset": 6251,
+          "endOffset": 6259,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "createSourceFile",
+      "ranges": [
+        {
+          "startOffset": 6292,
+          "endOffset": 6511,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "createProgram",
+      "ranges": [
+        {
+          "startOffset": 6532,
+          "endOffset": 6963,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "getStart",
+      "ranges": [
+        {
+          "startOffset": 6575,
+          "endOffset": 6580,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "getEnd",
+      "ranges": [
+        {
+          "startOffset": 6598,
+          "endOffset": 6604,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "forEachChild",
+      "ranges": [
+        {
+          "startOffset": 6628,
+          "endOffset": 6764,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "getStart",
+      "ranges": [
+        {
+          "startOffset": 6673,
+          "endOffset": 6678,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "getEnd",
+      "ranges": [
+        {
+          "startOffset": 6700,
+          "endOffset": 6706,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "forEachChild",
+      "ranges": [
+        {
+          "startOffset": 6734,
+          "endOffset": 6740,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "getTypeChecker",
+      "ranges": [
+        {
+          "startOffset": 6813,
+          "endOffset": 6917,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "getTypeAtLocation",
+      "ranges": [
+        {
+          "startOffset": 6851,
+          "endOffset": 6864,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "typeToString",
+      "ranges": [
+        {
+          "startOffset": 6892,
+          "endOffset": 6904,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "getSourceFile",
+      "ranges": [
+        {
+          "startOffset": 6942,
+          "endOffset": 6948,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "getPositionOfLineAndCharacter",
+      "ranges": [
+        {
+          "startOffset": 7000,
+          "endOffset": 7005,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "forEachChild",
+      "ranges": [
+        {
+          "startOffset": 7025,
+          "endOffset": 7058,
+          "count": 2
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 7102,
+          "endOffset": 7129,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 7300,
+          "endOffset": 7881,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "createCompilerHost",
+      "ranges": [
+        {
+          "startOffset": 7492,
+          "endOffset": 7539,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "getSourceFile",
+      "ranges": [
+        {
+          "startOffset": 7522,
+          "endOffset": 7530,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "createSourceFile",
+      "ranges": [
+        {
+          "startOffset": 7563,
+          "endOffset": 7571,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "createProgram",
+      "ranges": [
+        {
+          "startOffset": 7592,
+          "endOffset": 7634,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "getPositionOfLineAndCharacter",
+      "ranges": [
+        {
+          "startOffset": 7671,
+          "endOffset": 7676,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "forEachChild",
+      "ranges": [
+        {
+          "startOffset": 7696,
+          "endOffset": 7702,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 7746,
+          "endOffset": 7773,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 7954,
+          "endOffset": 8072,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 8147,
+          "endOffset": 8328,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 8405,
+          "endOffset": 8600,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 8455,
+          "endOffset": 8500,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 8689,
+          "endOffset": 9264,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "createCompilerHost",
+      "ranges": [
+        {
+          "startOffset": 8881,
+          "endOffset": 8928,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "getSourceFile",
+      "ranges": [
+        {
+          "startOffset": 8911,
+          "endOffset": 8919,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "createSourceFile",
+      "ranges": [
+        {
+          "startOffset": 8952,
+          "endOffset": 8960,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "createProgram",
+      "ranges": [
+        {
+          "startOffset": 8981,
+          "endOffset": 9023,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "getPositionOfLineAndCharacter",
+      "ranges": [
+        {
+          "startOffset": 9060,
+          "endOffset": 9065,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "forEachChild",
+      "ranges": [
+        {
+          "startOffset": 9085,
+          "endOffset": 9091,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 9135,
+          "endOffset": 9162,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 9356,
+          "endOffset": 10063,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "createCompilerHost",
+      "ranges": [
+        {
+          "startOffset": 9548,
+          "endOffset": 9595,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "getSourceFile",
+      "ranges": [
+        {
+          "startOffset": 9578,
+          "endOffset": 9586,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "createSourceFile",
+      "ranges": [
+        {
+          "startOffset": 9619,
+          "endOffset": 9627,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "createProgram",
+      "ranges": [
+        {
+          "startOffset": 9648,
+          "endOffset": 9822,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "getTypeChecker",
+      "ranges": [
+        {
+          "startOffset": 9679,
+          "endOffset": 9775,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "getTypeAtLocation",
+      "ranges": [
+        {
+          "startOffset": 9717,
+          "endOffset": 9725,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "typeToString",
+      "ranges": [
+        {
+          "startOffset": 9753,
+          "endOffset": 9762,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "getSourceFile",
+      "ranges": [
+        {
+          "startOffset": 9800,
+          "endOffset": 9813,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "getPositionOfLineAndCharacter",
+      "ranges": [
+        {
+          "startOffset": 9859,
+          "endOffset": 9864,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "forEachChild",
+      "ranges": [
+        {
+          "startOffset": 9884,
+          "endOffset": 9890,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 9934,
+          "endOffset": 9961,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 10152,
+          "endOffset": 12020,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "getLineAndCharacterOfPosition",
+      "ranges": [
+        {
+          "startOffset": 10297,
+          "endOffset": 10350,
+          "count": 2
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "getLineAndCharacterOfPosition",
+      "ranges": [
+        {
+          "startOffset": 10440,
+          "endOffset": 10493,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "createCompilerHost",
+      "ranges": [
+        {
+          "startOffset": 10679,
+          "endOffset": 10726,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "getSourceFile",
+      "ranges": [
+        {
+          "startOffset": 10709,
+          "endOffset": 10717,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "createSourceFile",
+      "ranges": [
+        {
+          "startOffset": 10750,
+          "endOffset": 10764,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "createProgram",
+      "ranges": [
+        {
+          "startOffset": 10785,
+          "endOffset": 10960,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "getTypeChecker",
+      "ranges": [
+        {
+          "startOffset": 10816,
+          "endOffset": 10912,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "getTypeAtLocation",
+      "ranges": [
+        {
+          "startOffset": 10854,
+          "endOffset": 10862,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "typeToString",
+      "ranges": [
+        {
+          "startOffset": 10890,
+          "endOffset": 10899,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "getSourceFile",
+      "ranges": [
+        {
+          "startOffset": 10937,
+          "endOffset": 10951,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "getPreEmitDiagnostics",
+      "ranges": [
+        {
+          "startOffset": 10989,
+          "endOffset": 11499,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "flattenDiagnosticMessageText",
+      "ranges": [
+        {
+          "startOffset": 11535,
+          "endOffset": 11549,
+          "count": 2
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "getPositionOfLineAndCharacter",
+      "ranges": [
+        {
+          "startOffset": 11586,
+          "endOffset": 11591,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "forEachChild",
+      "ranges": [
+        {
+          "startOffset": 11611,
+          "endOffset": 11617,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 11661,
+          "endOffset": 11688,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 12099,
+          "endOffset": 12981,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "createCompilerHost",
+      "ranges": [
+        {
+          "startOffset": 12291,
+          "endOffset": 12338,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "getSourceFile",
+      "ranges": [
+        {
+          "startOffset": 12321,
+          "endOffset": 12329,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "createSourceFile",
+      "ranges": [
+        {
+          "startOffset": 12362,
+          "endOffset": 12370,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "createProgram",
+      "ranges": [
+        {
+          "startOffset": 12391,
+          "endOffset": 12620,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "getTypeChecker",
+      "ranges": [
+        {
+          "startOffset": 12422,
+          "endOffset": 12518,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "getTypeAtLocation",
+      "ranges": [
+        {
+          "startOffset": 12460,
+          "endOffset": 12468,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "typeToString",
+      "ranges": [
+        {
+          "startOffset": 12496,
+          "endOffset": 12505,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "getSourceFile",
+      "ranges": [
+        {
+          "startOffset": 12543,
+          "endOffset": 12611,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "getPreEmitDiagnostics",
+      "ranges": [
+        {
+          "startOffset": 12649,
+          "endOffset": 12698,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "flattenDiagnosticMessageText",
+      "ranges": [
+        {
+          "startOffset": 12734,
+          "endOffset": 12740,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "getPositionOfLineAndCharacter",
+      "ranges": [
+        {
+          "startOffset": 12777,
+          "endOffset": 12782,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "forEachChild",
+      "ranges": [
+        {
+          "startOffset": 12802,
+          "endOffset": 12808,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 12852,
+          "endOffset": 12879,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 13056,
+          "endOffset": 13413,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 13318,
+          "endOffset": 13338,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 13477,
+          "endOffset": 13652,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 13717,
+          "endOffset": 13969,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 14032,
+          "endOffset": 14205,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 14268,
+          "endOffset": 14448,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 14511,
+          "endOffset": 14637,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 14721,
+          "endOffset": 15217,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 15291,
+          "endOffset": 15704,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 15778,
+          "endOffset": 16085,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 16039,
+          "endOffset": 16059,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    }
+  ]
+}

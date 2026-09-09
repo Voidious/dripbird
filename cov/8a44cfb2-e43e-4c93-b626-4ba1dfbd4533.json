@@ -1,0 +1,303 @@
+{
+  "scriptId": "342",
+  "url": "file:///tmp/opencode/dripbird-f4/src/refactors/duplicate_extractor.ts",
+  "functions": [
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 0,
+          "endOffset": 21974,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "parseSource",
+      "ranges": [
+        {
+          "startOffset": 216,
+          "endOffset": 490,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "cloneDeep",
+      "ranges": [
+        {
+          "startOffset": 491,
+          "endOffset": 908,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "isPropertyContext",
+      "ranges": [
+        {
+          "startOffset": 916,
+          "endOffset": 1583,
+          "count": 14
+        },
+        {
+          "startOffset": 1000,
+          "endOffset": 1027,
+          "count": 4
+        },
+        {
+          "startOffset": 1028,
+          "endOffset": 1047,
+          "count": 2
+        },
+        {
+          "startOffset": 1049,
+          "endOffset": 1061,
+          "count": 2
+        },
+        {
+          "startOffset": 1061,
+          "endOffset": 1101,
+          "count": 12
+        },
+        {
+          "startOffset": 1101,
+          "endOffset": 1123,
+          "count": 2
+        },
+        {
+          "startOffset": 1124,
+          "endOffset": 1143,
+          "count": 1
+        },
+        {
+          "startOffset": 1144,
+          "endOffset": 1164,
+          "count": 1
+        },
+        {
+          "startOffset": 1166,
+          "endOffset": 1178,
+          "count": 1
+        },
+        {
+          "startOffset": 1178,
+          "endOffset": 1216,
+          "count": 11
+        },
+        {
+          "startOffset": 1216,
+          "endOffset": 1238,
+          "count": 0
+        },
+        {
+          "startOffset": 1239,
+          "endOffset": 1258,
+          "count": 0
+        },
+        {
+          "startOffset": 1260,
+          "endOffset": 1272,
+          "count": 0
+        },
+        {
+          "startOffset": 1272,
+          "endOffset": 1349,
+          "count": 11
+        },
+        {
+          "startOffset": 1350,
+          "endOffset": 1387,
+          "count": 11
+        },
+        {
+          "startOffset": 1388,
+          "endOffset": 1427,
+          "count": 11
+        },
+        {
+          "startOffset": 1429,
+          "endOffset": 1451,
+          "count": 0
+        },
+        {
+          "startOffset": 1452,
+          "endOffset": 1471,
+          "count": 0
+        },
+        {
+          "startOffset": 1473,
+          "endOffset": 1485,
+          "count": 0
+        },
+        {
+          "startOffset": 1485,
+          "endOffset": 1527,
+          "count": 11
+        },
+        {
+          "startOffset": 1527,
+          "endOffset": 1551,
+          "count": 0
+        },
+        {
+          "startOffset": 1553,
+          "endOffset": 1565,
+          "count": 0
+        },
+        {
+          "startOffset": 1565,
+          "endOffset": 1582,
+          "count": 11
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "normalizeStatements",
+      "ranges": [
+        {
+          "startOffset": 1584,
+          "endOffset": 2089,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "usesThis",
+      "ranges": [
+        {
+          "startOffset": 2097,
+          "endOffset": 2332,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "collectSequences",
+      "ranges": [
+        {
+          "startOffset": 2340,
+          "endOffset": 5099,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "overlapsRange",
+      "ranges": [
+        {
+          "startOffset": 5100,
+          "endOffset": 5223,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "findDuplicateGroups",
+      "ranges": [
+        {
+          "startOffset": 5614,
+          "endOffset": 6559,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "selectNonOverlapping",
+      "ranges": [
+        {
+          "startOffset": 7080,
+          "endOffset": 7405,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "detectBaseIndent",
+      "ranges": [
+        {
+          "startOffset": 7413,
+          "endOffset": 7753,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "normalizeCallSiteIndent",
+      "ranges": [
+        {
+          "startOffset": 7761,
+          "endOffset": 8207,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "applyTextEdit",
+      "ranges": [
+        {
+          "startOffset": 8215,
+          "endOffset": 8603,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "computeExtractionTarget",
+      "ranges": [
+        {
+          "startOffset": 9111,
+          "endOffset": 9586,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "reindentBlock",
+      "ranges": [
+        {
+          "startOffset": 9834,
+          "endOffset": 10157,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "insertMethodIntoClass",
+      "ranges": [
+        {
+          "startOffset": 10434,
+          "endOffset": 11635,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "createDuplicateExtractor",
+      "ranges": [
+        {
+          "startOffset": 11643,
+          "endOffset": 21973,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    }
+  ]
+}

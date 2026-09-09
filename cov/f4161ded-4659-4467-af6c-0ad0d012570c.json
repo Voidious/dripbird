@@ -1,0 +1,55 @@
+{
+  "scriptId": "342",
+  "url": "file:///tmp/opencode/dripbird-f4/src/refactors/if_not_else.ts",
+  "functions": [
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 0,
+          "endOffset": 1729,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "inRange",
+      "ranges": [
+        {
+          "startOffset": 99,
+          "endOffset": 216,
+          "count": 78
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 167,
+          "endOffset": 212,
+          "count": 79
+        },
+        {
+          "startOffset": 191,
+          "endOffset": 212,
+          "count": 78
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "ifNotElse",
+      "ranges": [
+        {
+          "startOffset": 242,
+          "endOffset": 1727,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    }
+  ]
+}

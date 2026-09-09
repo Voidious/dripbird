@@ -1,0 +1,39 @@
+{
+  "scriptId": "389",
+  "url": "file:///home/pcupka/.cache/deno/npm/registry.npmjs.org/source-map/0.6.1/lib/base64.js",
+  "functions": [
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 0,
+          "endOffset": 1540,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "exports.encode",
+      "ranges": [
+        {
+          "startOffset": 403,
+          "endOffset": 576,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "exports.decode",
+      "ranges": [
+        {
+          "startOffset": 693,
+          "endOffset": 1538,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    }
+  ]
+}

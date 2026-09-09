@@ -1,0 +1,248 @@
+{
+  "scriptId": "356",
+  "url": "file:///home/pcupka/.cache/deno/npm/registry.npmjs.org/ast-types/0.16.1/lib/scope.js",
+  "functions": [
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 0,
+          "endOffset": 14551,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "scopePlugin",
+      "ranges": [
+        {
+          "startOffset": 250,
+          "endOffset": 14415,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "Scope",
+      "ranges": [
+        {
+          "startOffset": 552,
+          "endOffset": 1460,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "Scope.isEstablishedBy",
+      "ranges": [
+        {
+          "startOffset": 2338,
+          "endOffset": 2437,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "Sp.declares",
+      "ranges": [
+        {
+          "startOffset": 2579,
+          "endOffset": 2672,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "Sp.declaresType",
+      "ranges": [
+        {
+          "startOffset": 2696,
+          "endOffset": 2786,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "Sp.declareTemporary",
+      "ranges": [
+        {
+          "startOffset": 2814,
+          "endOffset": 3435,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "Sp.injectTemporary",
+      "ranges": [
+        {
+          "startOffset": 3462,
+          "endOffset": 3856,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "Sp.scan",
+      "ranges": [
+        {
+          "startOffset": 3872,
+          "endOffset": 4355,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "Sp.getBindings",
+      "ranges": [
+        {
+          "startOffset": 4378,
+          "endOffset": 4448,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "Sp.getTypes",
+      "ranges": [
+        {
+          "startOffset": 4468,
+          "endOffset": 4535,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "scanScope",
+      "ranges": [
+        {
+          "startOffset": 4541,
+          "endOffset": 5432,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "recursiveScanScope",
+      "ranges": [
+        {
+          "startOffset": 5437,
+          "endOffset": 7950,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "pathHasValue",
+      "ranges": [
+        {
+          "startOffset": 7955,
+          "endOffset": 8427,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "recursiveScanChild",
+      "ranges": [
+        {
+          "startOffset": 8432,
+          "endOffset": 10485,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "addPattern",
+      "ranges": [
+        {
+          "startOffset": 10490,
+          "endOffset": 13099,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "addTypePattern",
+      "ranges": [
+        {
+          "startOffset": 13104,
+          "endOffset": 13509,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "addTypeParameter",
+      "ranges": [
+        {
+          "startOffset": 13514,
+          "endOffset": 13860,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "Sp.lookup",
+      "ranges": [
+        {
+          "startOffset": 13877,
+          "endOffset": 14043,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "Sp.lookupType",
+      "ranges": [
+        {
+          "startOffset": 14065,
+          "endOffset": 14235,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "Sp.getGlobalScope",
+      "ranges": [
+        {
+          "startOffset": 14261,
+          "endOffset": 14394,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 14485,
+          "endOffset": 14515,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    }
+  ]
+}

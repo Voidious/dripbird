@@ -401,8 +401,12 @@ the pre-change baseline) before the LLM review. Blocks using `this` stay single-
 only. After a rewrite, imports the file no longer references are pruned, so callers
 never keep stale imports of helpers they only reach through a newer one. New shared
 modules inherit the leading `// deno-lint-ignore-file` directives of the files whose
-code they carry (union, verbatim, deduplicated) — the moved code already had its
-lint suppressions, and the module must not start failing rules the sources passed.
+code they carry (union, deduplicated) — the moved code already had its lint
+suppressions, and the module must not start failing rules the sources passed. A
+directive the generated module provably does not trip is not emitted (today:
+`no-explicit-any`, decided by an AST scan for `any` annotations), so propagation
+never leaves an unused ignore that fails `ban-unused-ignore` in repos that enable
+it; rules that cannot be decided statically stay suppressed.
 
 Skipped when:
 

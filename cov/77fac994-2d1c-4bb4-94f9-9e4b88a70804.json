@@ -1,0 +1,138 @@
+{
+  "scriptId": "394",
+  "url": "file:///home/pcupka/.cache/deno/npm/registry.npmjs.org/source-map/0.6.1/lib/source-node.js",
+  "functions": [
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 0,
+          "endOffset": 13808,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "SourceNode",
+      "ranges": [
+        {
+          "startOffset": 1281,
+          "endOffset": 1654,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "SourceNode_fromStringWithSourceMap",
+      "ranges": [
+        {
+          "startOffset": 2008,
+          "endOffset": 6512,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "SourceNode_add",
+      "ranges": [
+        {
+          "startOffset": 6757,
+          "endOffset": 7182,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "SourceNode_prepend",
+      "ranges": [
+        {
+          "startOffset": 7448,
+          "endOffset": 7865,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "SourceNode_walk",
+      "ranges": [
+        {
+          "startOffset": 8168,
+          "endOffset": 8584,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "SourceNode_join",
+      "ranges": [
+        {
+          "startOffset": 8763,
+          "endOffset": 9102,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "SourceNode_replaceRight",
+      "ranges": [
+        {
+          "startOffset": 9399,
+          "endOffset": 9832,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "SourceNode_setSourceContent",
+      "ranges": [
+        {
+          "startOffset": 10120,
+          "endOffset": 10264,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "SourceNode_walkSourceContents",
+      "ranges": [
+        {
+          "startOffset": 10508,
+          "endOffset": 10922,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "SourceNode_toString",
+      "ranges": [
+        {
+          "startOffset": 11111,
+          "endOffset": 11230,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "SourceNode_toStringWithSourceMap",
+      "ranges": [
+        {
+          "startOffset": 11371,
+          "endOffset": 13772,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    }
+  ]
+}

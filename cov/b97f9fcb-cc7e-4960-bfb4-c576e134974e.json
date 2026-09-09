@@ -1,0 +1,532 @@
+{
+  "scriptId": "400",
+  "url": "file:///home/pcupka/.cache/deno/npm/registry.npmjs.org/recast/0.23.11/lib/patcher.js",
+  "functions": [
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 0,
+          "endOffset": 16121,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "Patcher",
+      "ranges": [
+        {
+          "startOffset": 829,
+          "endOffset": 2328,
+          "count": 31
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "Patcher.self.replace",
+      "ranges": [
+        {
+          "startOffset": 1045,
+          "endOffset": 1282,
+          "count": 24
+        },
+        {
+          "startOffset": 1116,
+          "endOffset": 1154,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "Patcher.self.get",
+      "ranges": [
+        {
+          "startOffset": 1299,
+          "endOffset": 2325,
+          "count": 31
+        },
+        {
+          "startOffset": 1407,
+          "endOffset": 1548,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "pushSlice",
+      "ranges": [
+        {
+          "startOffset": 1608,
+          "endOffset": 1780,
+          "count": 55
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 1820,
+          "endOffset": 1888,
+          "count": 20
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 1911,
+          "endOffset": 2233,
+          "count": 24
+        },
+        {
+          "startOffset": 1994,
+          "endOffset": 2062,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "Pp.tryToReprintComments",
+      "ranges": [
+        {
+          "startOffset": 2411,
+          "endOffset": 3627,
+          "count": 24
+        },
+        {
+          "startOffset": 2613,
+          "endOffset": 3140,
+          "count": 0
+        },
+        {
+          "startOffset": 3142,
+          "endOffset": 3626,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 3169,
+          "endOffset": 3583,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "getSurroundingComments",
+      "ranges": [
+        {
+          "startOffset": 3813,
+          "endOffset": 4123,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "Pp.deleteComments",
+      "ranges": [
+        {
+          "startOffset": 4144,
+          "endOffset": 4931,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "getReprinter",
+      "ranges": [
+        {
+          "startOffset": 4933,
+          "endOffset": 8031,
+          "count": 32
+        },
+        {
+          "startOffset": 5226,
+          "endOffset": 5233,
+          "count": 0
+        },
+        {
+          "startOffset": 5422,
+          "endOffset": 5429,
+          "count": 1
+        },
+        {
+          "startOffset": 5429,
+          "endOffset": 8030,
+          "count": 31
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 5441,
+          "endOffset": 8028,
+          "count": 31
+        },
+        {
+          "startOffset": 7917,
+          "endOffset": 7993,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 5527,
+          "endOffset": 7662,
+          "count": 24
+        },
+        {
+          "startOffset": 5863,
+          "endOffset": 6189,
+          "count": 0
+        },
+        {
+          "startOffset": 6768,
+          "endOffset": 6798,
+          "count": 16
+        },
+        {
+          "startOffset": 7366,
+          "endOffset": 7600,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "needsLeadingSpace",
+      "ranges": [
+        {
+          "startOffset": 8289,
+          "endOffset": 8843,
+          "count": 24
+        },
+        {
+          "startOffset": 8764,
+          "endOffset": 8787,
+          "count": 0
+        },
+        {
+          "startOffset": 8788,
+          "endOffset": 8839,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "needsTrailingSpace",
+      "ranges": [
+        {
+          "startOffset": 9063,
+          "endOffset": 9571,
+          "count": 24
+        },
+        {
+          "startOffset": 9486,
+          "endOffset": 9512,
+          "count": 6
+        },
+        {
+          "startOffset": 9513,
+          "endOffset": 9567,
+          "count": 6
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "findReprints",
+      "ranges": [
+        {
+          "startOffset": 9572,
+          "endOffset": 10179,
+          "count": 32
+        },
+        {
+          "startOffset": 9848,
+          "endOffset": 9877,
+          "count": 0
+        },
+        {
+          "startOffset": 10019,
+          "endOffset": 10154,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "findAnyReprints",
+      "ranges": [
+        {
+          "startOffset": 10180,
+          "endOffset": 10570,
+          "count": 590
+        },
+        {
+          "startOffset": 10348,
+          "endOffset": 10360,
+          "count": 422
+        },
+        {
+          "startOffset": 10360,
+          "endOffset": 10401,
+          "count": 168
+        },
+        {
+          "startOffset": 10401,
+          "endOffset": 10454,
+          "count": 62
+        },
+        {
+          "startOffset": 10454,
+          "endOffset": 10496,
+          "count": 106
+        },
+        {
+          "startOffset": 10496,
+          "endOffset": 10550,
+          "count": 90
+        },
+        {
+          "startOffset": 10550,
+          "endOffset": 10569,
+          "count": 16
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "findArrayReprints",
+      "ranges": [
+        {
+          "startOffset": 10571,
+          "endOffset": 11329,
+          "count": 62
+        },
+        {
+          "startOffset": 10809,
+          "endOffset": 10837,
+          "count": 0
+        },
+        {
+          "startOffset": 10966,
+          "endOffset": 10979,
+          "count": 0
+        },
+        {
+          "startOffset": 11014,
+          "endOffset": 11310,
+          "count": 21
+        },
+        {
+          "startOffset": 11267,
+          "endOffset": 11304,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "findObjectReprints",
+      "ranges": [
+        {
+          "startOffset": 11330,
+          "endOffset": 14221,
+          "count": 90
+        },
+        {
+          "startOffset": 11491,
+          "endOffset": 11591,
+          "count": 0
+        },
+        {
+          "startOffset": 11672,
+          "endOffset": 11685,
+          "count": 0
+        },
+        {
+          "startOffset": 11791,
+          "endOffset": 11819,
+          "count": 0
+        },
+        {
+          "startOffset": 11854,
+          "endOffset": 14161,
+          "count": 84
+        },
+        {
+          "startOffset": 11895,
+          "endOffset": 11932,
+          "count": 0
+        },
+        {
+          "startOffset": 12137,
+          "endOffset": 12174,
+          "count": 0
+        },
+        {
+          "startOffset": 12175,
+          "endOffset": 12237,
+          "count": 0
+        },
+        {
+          "startOffset": 12239,
+          "endOffset": 12549,
+          "count": 0
+        },
+        {
+          "startOffset": 12735,
+          "endOffset": 13327,
+          "count": 76
+        },
+        {
+          "startOffset": 12841,
+          "endOffset": 12918,
+          "count": 60
+        },
+        {
+          "startOffset": 12918,
+          "endOffset": 13292,
+          "count": 16
+        },
+        {
+          "startOffset": 13229,
+          "endOffset": 13292,
+          "count": 0
+        },
+        {
+          "startOffset": 13327,
+          "endOffset": 13406,
+          "count": 8
+        },
+        {
+          "startOffset": 13407,
+          "endOffset": 13544,
+          "count": 8
+        },
+        {
+          "startOffset": 13546,
+          "endOffset": 13925,
+          "count": 8
+        },
+        {
+          "startOffset": 13925,
+          "endOffset": 14161,
+          "count": 0
+        },
+        {
+          "startOffset": 14161,
+          "endOffset": 14220,
+          "count": 6
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "findChildReprints",
+      "ranges": [
+        {
+          "startOffset": 14222,
+          "endOffset": 16120,
+          "count": 114
+        },
+        {
+          "startOffset": 14450,
+          "endOffset": 14550,
+          "count": 0
+        },
+        {
+          "startOffset": 14762,
+          "endOffset": 14785,
+          "count": 1
+        },
+        {
+          "startOffset": 14787,
+          "endOffset": 14816,
+          "count": 1
+        },
+        {
+          "startOffset": 14816,
+          "endOffset": 14910,
+          "count": 113
+        },
+        {
+          "startOffset": 14910,
+          "endOffset": 14936,
+          "count": 107
+        },
+        {
+          "startOffset": 14938,
+          "endOffset": 15109,
+          "count": 6
+        },
+        {
+          "startOffset": 15109,
+          "endOffset": 15278,
+          "count": 113
+        },
+        {
+          "startOffset": 15278,
+          "endOffset": 15799,
+          "count": 569
+        },
+        {
+          "startOffset": 15313,
+          "endOffset": 15462,
+          "count": 0
+        },
+        {
+          "startOffset": 15756,
+          "endOffset": 15793,
+          "count": 16
+        },
+        {
+          "startOffset": 15799,
+          "endOffset": 16021,
+          "count": 97
+        },
+        {
+          "startOffset": 16021,
+          "endOffset": 16070,
+          "count": 0
+        },
+        {
+          "startOffset": 16072,
+          "endOffset": 16101,
+          "count": 0
+        },
+        {
+          "startOffset": 16101,
+          "endOffset": 16119,
+          "count": 97
+        }
+      ],
+      "isBlockCoverage": true
+    }
+  ]
+}

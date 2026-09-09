@@ -1,0 +1,137 @@
+{
+  "scriptId": "311",
+  "url": "file:///tmp/opencode/dripbird-f4/src/refactors/if_not_else.ts",
+  "functions": [
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 0,
+          "endOffset": 1729,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "inRange",
+      "ranges": [
+        {
+          "startOffset": 99,
+          "endOffset": 216,
+          "count": 17
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 167,
+          "endOffset": 212,
+          "count": 16
+        },
+        {
+          "startOffset": 191,
+          "endOffset": 212,
+          "count": 15
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "ifNotElse",
+      "ranges": [
+        {
+          "startOffset": 242,
+          "endOffset": 1727,
+          "count": 13
+        },
+        {
+          "startOffset": 552,
+          "endOffset": 642,
+          "count": 1
+        },
+        {
+          "startOffset": 642,
+          "endOffset": 1537,
+          "count": 12
+        },
+        {
+          "startOffset": 1537,
+          "endOffset": 1726,
+          "count": 6
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "parse",
+      "ranges": [
+        {
+          "startOffset": 331,
+          "endOffset": 531,
+          "count": 13
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "visitIfStatement",
+      "ranges": [
+        {
+          "startOffset": 712,
+          "endOffset": 1514,
+          "count": 14
+        },
+        {
+          "startOffset": 849,
+          "endOffset": 903,
+          "count": 1
+        },
+        {
+          "startOffset": 903,
+          "endOffset": 951,
+          "count": 13
+        },
+        {
+          "startOffset": 951,
+          "endOffset": 980,
+          "count": 10
+        },
+        {
+          "startOffset": 982,
+          "endOffset": 1036,
+          "count": 3
+        },
+        {
+          "startOffset": 1036,
+          "endOffset": 1064,
+          "count": 10
+        },
+        {
+          "startOffset": 1064,
+          "endOffset": 1118,
+          "count": 1
+        },
+        {
+          "startOffset": 1118,
+          "endOffset": 1168,
+          "count": 9
+        },
+        {
+          "startOffset": 1168,
+          "endOffset": 1222,
+          "count": 1
+        },
+        {
+          "startOffset": 1222,
+          "endOffset": 1477,
+          "count": 8
+        }
+      ],
+      "isBlockCoverage": true
+    }
+  ]
+}

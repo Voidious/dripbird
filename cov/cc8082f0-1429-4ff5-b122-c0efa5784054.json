@@ -1,0 +1,72 @@
+{
+  "scriptId": "425",
+  "url": "file:///home/pcupka/.cache/deno/npm/registry.npmjs.org/source-map/0.6.1/lib/mapping-list.js",
+  "functions": [
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 0,
+          "endOffset": 2339,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "generatedPositionAfter",
+      "ranges": [
+        {
+          "startOffset": 334,
+          "endOffset": 727,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "MappingList",
+      "ranges": [
+        {
+          "startOffset": 957,
+          "endOffset": 1105,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "MappingList_forEach",
+      "ranges": [
+        {
+          "startOffset": 1327,
+          "endOffset": 1428,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "MappingList_add",
+      "ranges": [
+        {
+          "startOffset": 1529,
+          "endOffset": 1753,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "MappingList_toArray",
+      "ranges": [
+        {
+          "startOffset": 2129,
+          "endOffset": 2301,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    }
+  ]
+}

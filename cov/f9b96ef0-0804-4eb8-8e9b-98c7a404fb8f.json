@@ -1,0 +1,326 @@
+{
+  "scriptId": "341",
+  "url": "file:///tmp/opencode/dripbird-f4/src/refactors/function_splitter.ts",
+  "functions": [
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 0,
+          "endOffset": 25879,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "collectPatternBindings",
+      "ranges": [
+        {
+          "startOffset": 271,
+          "endOffset": 1101,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "collectAllBindings",
+      "ranges": [
+        {
+          "startOffset": 1109,
+          "endOffset": 1885,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "collectIdentifiers",
+      "ranges": [
+        {
+          "startOffset": 1893,
+          "endOffset": 3316,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "computeFreeVars",
+      "ranges": [
+        {
+          "startOffset": 3317,
+          "endOffset": 3775,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "returnsWithValue",
+      "ranges": [
+        {
+          "startOffset": 3776,
+          "endOffset": 4055,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "usesThis",
+      "ranges": [
+        {
+          "startOffset": 4056,
+          "endOffset": 4291,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "hasNestedFunctionDecl",
+      "ranges": [
+        {
+          "startOffset": 4292,
+          "endOffset": 4543,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "getParamName",
+      "ranges": [
+        {
+          "startOffset": 4551,
+          "endOffset": 4892,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "getOriginalParams",
+      "ranges": [
+        {
+          "startOffset": 4893,
+          "endOffset": 4993,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "cloneAstNode",
+      "ranges": [
+        {
+          "startOffset": 4994,
+          "endOffset": 5420,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "findTypeAnnotationInPattern",
+      "ranges": [
+        {
+          "startOffset": 5421,
+          "endOffset": 5602,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "findIdentifierLoc",
+      "ranges": [
+        {
+          "startOffset": 5603,
+          "endOffset": 6609,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "findVarDeclLocation",
+      "ranges": [
+        {
+          "startOffset": 6610,
+          "endOffset": 6900,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "extractTypeFromParamNode",
+      "ranges": [
+        {
+          "startOffset": 6901,
+          "endOffset": 7742,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "findTypeAnnotationForName",
+      "ranges": [
+        {
+          "startOffset": 7743,
+          "endOffset": 8259,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "buildTypedParams",
+      "ranges": [
+        {
+          "startOffset": 8260,
+          "endOffset": 9076,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "isTrivialTail",
+      "ranges": [
+        {
+          "startOffset": 9077,
+          "endOffset": 9254,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "estimateResultLineCounts",
+      "ranges": [
+        {
+          "startOffset": 9255,
+          "endOffset": 9639,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "computeDiffCoverage",
+      "ranges": [
+        {
+          "startOffset": 9647,
+          "endOffset": 10114,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "getDiffStatementRange",
+      "ranges": [
+        {
+          "startOffset": 10122,
+          "endOffset": 10649,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "selectSplitPoints",
+      "ranges": [
+        {
+          "startOffset": 10650,
+          "endOffset": 11418,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "getTailCode",
+      "ranges": [
+        {
+          "startOffset": 11426,
+          "endOffset": 11653,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "collectFileLevelBindings",
+      "ranges": [
+        {
+          "startOffset": 12582,
+          "endOffset": 13643,
+          "count": 35
+        },
+        {
+          "startOffset": 12691,
+          "endOffset": 13622,
+          "count": 74
+        },
+        {
+          "startOffset": 12722,
+          "endOffset": 12813,
+          "count": 66
+        },
+        {
+          "startOffset": 12820,
+          "endOffset": 12908,
+          "count": 8
+        },
+        {
+          "startOffset": 12915,
+          "endOffset": 13067,
+          "count": 0
+        },
+        {
+          "startOffset": 13074,
+          "endOffset": 13210,
+          "count": 0
+        },
+        {
+          "startOffset": 13217,
+          "endOffset": 13298,
+          "count": 0
+        },
+        {
+          "startOffset": 13305,
+          "endOffset": 13386,
+          "count": 0
+        },
+        {
+          "startOffset": 13393,
+          "endOffset": 13469,
+          "count": 0
+        },
+        {
+          "startOffset": 13476,
+          "endOffset": 13612,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "createFunctionSplitter",
+      "ranges": [
+        {
+          "startOffset": 13651,
+          "endOffset": 25878,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    }
+  ]
+}
