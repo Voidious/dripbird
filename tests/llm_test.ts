@@ -1552,6 +1552,10 @@ Deno.test("MoonshotClient reviewChange builds structured prompt when entities ar
         content.includes("ASSIGNMENTS USED AFTERWARD"),
         "prompt should include the assignments-used-afterward check",
     );
+    assert(
+        content.includes("UNDEFINED-SENTINEL CONFLATION"),
+        "prompt should include the undefined-sentinel check",
+    );
 
     // Hoisting note is retained so file-end placement is not falsely flagged.
     assert(
@@ -1726,6 +1730,7 @@ Deno.test("MoonshotClient reviewCrossFileChange builds cross-file prompt", async
     assert(content.includes("NEW SHARED MODULE (common/greet.ts)"));
     assert(content.includes("IMPORT added to the file"));
     assert(content.includes("IMPORT WIRING"));
+    assert(content.includes("UNDEFINED-SENTINEL CONFLATION"));
     assert(content.includes("Site 1: a.ts, lines 3-5 (alpha)"));
     assert(content.includes("Site 2: b.ts, lines 4-6 (beta)"));
 });

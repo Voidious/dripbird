@@ -683,6 +683,7 @@ export class MoonshotClient implements LLMClient {
                 `2. RETURN / CONTROL FLOW: if the ORIGINAL block ended with a \`return X\`, the REPLACEMENT ends with \`return helper(...)\` (or otherwise propagates the value). If the ORIGINAL block had an EARLY \`return\`/\`break\`/\`continue\`/\`throw\` that escaped an enclosing scope, the helper reproduces it internally AND the call site propagates it (e.g. \`const r = helper(...); if (r === null) return null;\`).\n` +
                 `3. NO BROKEN SHARED MUTABLE STATE: the helper must not rely on, or silently drop, mutable state shared with code OUTSIDE the block. If the ORIGINAL block declared or mutated a local (counter, accumulator, flag) that is read or mutated by OTHER code — e.g. a variable captured by a closure/callback defined elsewhere in the same function — then returning that value by value from the helper BREAKS the sharing (the outer code would mutate a copy). Reject.\n` +
                 `4. ASSIGNMENTS USED AFTERWARD: any variable the ORIGINAL block assigned and that is read later in the enclosing scope is still produced (returned by the helper and assigned at the call site).\n` +
+                `5. NO UNDEFINED-SENTINEL CONFLATION: the helper must not return \`undefined\` for BOTH a legitimate value (e.g. the input passed through) and a "not handled / not a base case" signal, unless the call site can distinguish the two cases. If a caller cannot tell them apart, a legitimate \`undefined\` input falls through to code that does not expect it (e.g. recursing on \`undefined\` and throwing). Reject.\n` +
                 `Use the review tool to answer.`,
         }];
     }
@@ -1042,6 +1043,7 @@ export class MoonshotClient implements LLMClient {
                     `3. RETURN / CONTROL FLOW: if the ORIGINAL block ended with a \`return X\`, the REPLACEMENT ends with \`return helper(...)\` (or otherwise propagates the value). If the ORIGINAL block had an EARLY \`return\`/\`break\`/\`continue\`/\`throw\` that escaped an enclosing scope, the helper reproduces it internally AND the call site propagates it.\n` +
                     `4. NO BROKEN SHARED MUTABLE STATE: the helper must not rely on, or silently drop, mutable state shared with code OUTSIDE the block in the original file.\n` +
                     `5. ASSIGNMENTS USED AFTERWARD: any variable the ORIGINAL block assigned and that is read later in the enclosing scope is still produced at the call site.\n` +
+                    `6. NO UNDEFINED-SENTINEL CONFLATION: the helper must not return \`undefined\` for BOTH a legitimate value (e.g. the input passed through) and a "not handled / not a base case" signal, unless the call site can distinguish the two cases. If a caller cannot tell them apart, a legitimate \`undefined\` input falls through to code that does not expect it (e.g. recursing on \`undefined\` and throwing). Reject.\n` +
                     `Use the review tool to answer.`,
             },
         ];
