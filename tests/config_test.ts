@@ -21,7 +21,6 @@ function partialConfig(
         duplicate_extractor_retries: 2,
         duplicate_extractor_shared_dir: "common",
         duplicate_extractor_cross_file: true,
-        format_output: false,
         provider: "moonshot",
         model: "kimi-k2.5",
         enabled_refactors: opts.enabled_refactors ?? [],
@@ -43,7 +42,6 @@ Deno.test("loadConfig returns defaults with no config files", () => {
             duplicate_extractor_retries: 2,
             duplicate_extractor_shared_dir: "common",
             duplicate_extractor_cross_file: true,
-            format_output: true,
             provider: "moonshot",
             model: "kimi-k2.5",
             enabled_refactors: [],
@@ -177,32 +175,6 @@ Deno.test("loadConfig rejects unsafe shared dir names", () => {
                 `expected "${bad}" to be rejected`,
             );
         }
-    } finally {
-        Deno.removeSync(tempDir, { recursive: true });
-    }
-});
-
-Deno.test("loadConfig reads format_output", () => {
-    const tempDir = Deno.makeTempDirSync();
-    try {
-        Deno.writeTextFileSync(
-            `${tempDir}/dripbird.yml`,
-            "format_output: false\n",
-        );
-        assertEquals(loadConfig(tempDir).format_output, false);
-    } finally {
-        Deno.removeSync(tempDir, { recursive: true });
-    }
-});
-
-Deno.test("loadConfig ignores a non-boolean format_output", () => {
-    const tempDir = Deno.makeTempDirSync();
-    try {
-        Deno.writeTextFileSync(
-            `${tempDir}/dripbird.yml`,
-            "format_output: 5\n",
-        );
-        assertEquals(loadConfig(tempDir).format_output, true);
     } finally {
         Deno.removeSync(tempDir, { recursive: true });
     }

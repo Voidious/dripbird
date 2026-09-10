@@ -11,11 +11,6 @@ export interface Config {
     duplicate_extractor_shared_dir: string;
     /** Whether duplicate extraction may extract across files. */
     duplicate_extractor_cross_file: boolean;
-    /**
-     * Whether files dripbird writes are formatted with `deno fmt`
-     * (new files always; rewrites only when they were fmt-clean before).
-     */
-    format_output: boolean;
     provider: string;
     model: string;
     enabled_refactors: string[];
@@ -49,7 +44,6 @@ const DEFAULTS: Config = {
     duplicate_extractor_retries: 2,
     duplicate_extractor_shared_dir: "common",
     duplicate_extractor_cross_file: true,
-    format_output: true,
     provider: "moonshot",
     model: "kimi-k2.5",
     enabled_refactors: [],
@@ -122,9 +116,6 @@ function mergeConfig(
         if (typeof override.duplicate_extractor_cross_file === "boolean") {
             result.duplicate_extractor_cross_file =
                 override.duplicate_extractor_cross_file;
-        }
-        if (typeof override.format_output === "boolean") {
-            result.format_output = override.format_output;
         }
         if (typeof override.provider === "string") {
             result.provider = override.provider;
