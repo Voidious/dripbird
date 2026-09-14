@@ -80,7 +80,7 @@ Local overrides take precedence over committed settings.
 | `duplicate_extractor_shared_dir` | `"common"`    | Preferred directory name for cross-file extraction's shared helper modules                |
 | `duplicate_extractor_cross_file` | `true`        | Whether duplicate extraction may extract across files                                     |
 | `provider`                       | `"moonshot"`  | LLM provider (currently only `"moonshot"`)                                                |
-| `model`                          | `"kimi-k2.5"` | LLM model name to use                                                                     |
+| `model`                          | `"kimi-k2.6"` | LLM model name to use                                                                     |
 | `enabled_refactors`              | `[]`          | If non-empty, only these refactors will run                                               |
 | `disabled_refactors`             | `[]`          | These refactors will be skipped                                                           |
 | `verbose`                        | `false`       | Print detailed log output for each refactor                                               |

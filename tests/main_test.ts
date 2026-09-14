@@ -19,7 +19,7 @@ const testConfigBase: Config = {
     duplicate_extractor_shared_dir: "common",
     duplicate_extractor_cross_file: true,
     provider: "moonshot",
-    model: "kimi-k2.5",
+    model: "kimi-k2.6",
     enabled_refactors: [],
     disabled_refactors: [],
     verbose: false,
@@ -241,7 +241,7 @@ Deno.test(
             );
             assert(
                 messages.some((m) =>
-                    m.includes("model:") && m.includes("kimi-k2.5")
+                    m.includes("model:") && m.includes("kimi-k2.6")
                 ),
             );
             assert(
