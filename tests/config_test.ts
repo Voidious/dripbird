@@ -19,8 +19,10 @@ function partialConfig(
         duplicate_extractor_min_lines: 2,
         duplicate_extractor_max_lines: 12,
         duplicate_extractor_retries: 2,
+        duplicate_extractor_shared_dir: "common",
+        duplicate_extractor_cross_file: true,
         provider: "moonshot",
-        model: "kimi-k2.5",
+        model: "kimi-k2.6",
         enabled_refactors: opts.enabled_refactors ?? [],
         disabled_refactors: opts.disabled_refactors ?? [],
         verbose: false,
@@ -38,8 +40,10 @@ Deno.test("loadConfig returns defaults with no config files", () => {
             duplicate_extractor_min_lines: 2,
             duplicate_extractor_max_lines: 12,
             duplicate_extractor_retries: 2,
+            duplicate_extractor_shared_dir: "common",
+            duplicate_extractor_cross_file: true,
             provider: "moonshot",
-            model: "kimi-k2.5",
+            model: "kimi-k2.6",
             enabled_refactors: [],
             disabled_refactors: [],
             verbose: false,
@@ -59,7 +63,7 @@ Deno.test("loadConfig reads from dripbird.yml", () => {
         const config = loadConfig(tempDir);
         assertEquals(config.max_function_lines, 50);
         assertEquals(config.provider, "openai");
-        assertEquals(config.model, "kimi-k2.5");
+        assertEquals(config.model, "kimi-k2.6");
     } finally {
         Deno.removeSync(tempDir, { recursive: true });
     }
@@ -130,6 +134,47 @@ Deno.test("loadConfig reads function_splitter_retries", () => {
         );
         const config = loadConfig(tempDir);
         assertEquals(config.function_splitter_retries, 5);
+    } finally {
+        Deno.removeSync(tempDir, { recursive: true });
+    }
+});
+
+Deno.test("loadConfig reads duplicate extractor shared dir and cross-file switch", () => {
+    const tempDir = Deno.makeTempDirSync();
+    try {
+        Deno.writeTextFileSync(
+            `${tempDir}/dripbird.yml`,
+            [
+                "duplicate_extractor_shared_dir: helpers",
+                "duplicate_extractor_cross_file: false",
+                "",
+            ].join("\n"),
+        );
+        const config = loadConfig(tempDir);
+        assertEquals(config.duplicate_extractor_shared_dir, "helpers");
+        assertEquals(config.duplicate_extractor_cross_file, false);
+    } finally {
+        Deno.removeSync(tempDir, { recursive: true });
+    }
+});
+
+Deno.test("loadConfig rejects unsafe shared dir names", () => {
+    const tempDir = Deno.makeTempDirSync();
+    try {
+        for (
+            const bad of ["../escape", "a/b", "", ".hidden", "with space"]
+        ) {
+            Deno.writeTextFileSync(
+                `${tempDir}/dripbird.yml`,
+                `duplicate_extractor_shared_dir: "${bad}"\n`,
+            );
+            const config = loadConfig(tempDir);
+            assertEquals(
+                config.duplicate_extractor_shared_dir,
+                "common",
+                `expected "${bad}" to be rejected`,
+            );
+        }
     } finally {
         Deno.removeSync(tempDir, { recursive: true });
     }

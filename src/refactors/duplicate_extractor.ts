@@ -48,7 +48,7 @@ function cloneDeep(node: any): any {
     return result;
 }
 
-function isPropertyContext(parent: any, node: any): boolean {
+export function isPropertyContext(parent: any, node: any): boolean {
     if (
         parent.type === "MemberExpression" &&
         parent.property === node &&
@@ -102,7 +102,7 @@ function normalizeStatements(stmts: any[]): string {
     return cloned.map((s: any) => print(s).code).join("\n");
 }
 
-function usesThis(stmts: any[]): boolean {
+export function usesThis(stmts: any[]): boolean {
     let found = false;
     for (const stmt of stmts) {
         visit(stmt, {
@@ -331,7 +331,7 @@ export function selectNonOverlapping(seqs: SeqInfo[]): SeqInfo[] {
     return result;
 }
 
-function detectBaseIndent(text: string): string {
+export function detectBaseIndent(text: string): string {
     let minLen = Infinity;
     let result = "";
     for (const line of text.split("\n")) {
@@ -348,7 +348,7 @@ function detectBaseIndent(text: string): string {
     return result;
 }
 
-function normalizeCallSiteIndent(
+export function normalizeCallSiteIndent(
     callSite: string,
     targetIndent: string,
 ): string {
@@ -364,7 +364,7 @@ function normalizeCallSiteIndent(
     }).join("\n");
 }
 
-function applyTextEdit(
+export function applyTextEdit(
     source: string,
     startLine: number,
     endLine: number,

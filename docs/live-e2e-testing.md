@@ -71,14 +71,32 @@ Notes:
 
 ### Available samples
 
-| sample                           | refactor            | uses LLM | determinism                 |
-| -------------------------------- | ------------------- | -------- | --------------------------- |
-| `if_not_else/basic`              | if_not_else         | no       | deterministic (pure AST)    |
-| `function_matcher/basic`         | function_matcher    | yes      | constrained — usually exact |
-| `function_matcher/static_method` | function_matcher    | yes      | constrained — usually exact |
-| `function_matcher/cross_file`    | function_matcher    | yes      | constrained — usually exact |
-| `function_splitter/basic`        | function_splitter   | yes      | open-ended — diverges       |
-| `duplicate_extractor/basic`      | duplicate_extractor | yes      | open-ended — diverges       |
+| sample                            | refactor            | uses LLM | determinism                 |
+| --------------------------------- | ------------------- | -------- | --------------------------- |
+| `if_not_else/basic`               | if_not_else         | no       | deterministic (pure AST)    |
+| `function_matcher/basic`          | function_matcher    | yes      | constrained — usually exact |
+| `function_matcher/static_method`  | function_matcher    | yes      | constrained — usually exact |
+| `function_matcher/cross_file`     | function_matcher    | yes      | constrained — usually exact |
+| `function_splitter/basic`         | function_splitter   | yes      | open-ended — diverges       |
+| `duplicate_extractor/basic`       | duplicate_extractor | yes      | open-ended — diverges       |
+| `duplicate_extractor/cross_file`  | duplicate_extractor | yes      | open-ended — diverges       |
+
+`duplicate_extractor/cross_file` needs **two files in the diff**, so its recipe
+differs — concatenate one whole-file diff per input:
+
+```bash
+work=$(mktemp -d)
+cp "$repo/samples/duplicate_extractor/cross_file/a/"* "$work/"
+cp "$repo/samples/duplicate_extractor/cross_file/dripbird.yml" "$work/dripbird.yml"
+cd "$work"
+{ git diff --no-index /dev/null one.ts; git diff --no-index /dev/null two.ts; } 2>/dev/null | dripbird
+echo "exit: $?"
+deno check one.ts two.ts "$work/common/"*.ts && echo "type-check: ok"
+```
+
+Expect a new `common/<helper>.ts` plus imports and call sites in both files; the
+helper name and signature are open-ended (LLM-chosen), so judge by the Stage 2
+intent criteria, not bytes.
 
 ## Reading the result
 
@@ -153,6 +171,16 @@ than `b/`:
 - **`duplicate_extractor/basic`:** live runs tend to make the helper _return_ the
   formatted entry (caller logs it), while `b/` has the helper log internally. Both
   preserve behavior.
+- **`duplicate_extractor/cross_file`:** live runs may **chain extractions** — pass 1
+  extracts the inner duplicate pair into one helper, and a later duplicate that
+  builds on it (calls it, then does its own work) extracts into a second helper
+  that calls the first. Two guards shape the chaining: re-detected residue whose
+  blocks only forward to a run-created helper (the leftover `const` + call, or an
+  `if (helper(...)) return true; return false;` shape) is skipped — no trivial
+  proxy wrappers — and each rewrite prunes imports it orphaned, so callers never
+  keep imports of helpers they only reach through a newer wrapper. Inserted
+  imports carry explicit `.ts` extensions, matching `b/`. Also expect the helper
+  names/shapes to differ from `b/` (LLM-chosen).
 
 If a run diverges in a way that breaks the Stage 2 intent criteria (or fails Stage
 1), that's a real regression — investigate before moving on.
@@ -171,14 +199,21 @@ for sample in \
     function_matcher/static_method \
     function_matcher/cross_file \
     function_splitter/basic \
-    duplicate_extractor/basic; do
+    duplicate_extractor/basic \
+    duplicate_extractor/cross_file; do
     echo "=== $sample ==="
     work=$(mktemp -d)
     cp "$repo/samples/$sample/a/"* "$work/"
     cp "$repo/samples/$sample/dripbird.yml" "$work/dripbird.yml"
-    (cd "$work" && git diff --no-index /dev/null example.ts 2>/dev/null | dripbird)
+    if [ "$sample" = "duplicate_extractor/cross_file" ]; then
+        # Two input files must both be in the diff (see recipe above).
+        (cd "$work" && { git diff --no-index /dev/null one.ts; git diff --no-index /dev/null two.ts; } 2>/dev/null | dripbird)
+        deno check "$work/one.ts" "$work/two.ts" "$work/common/"*.ts && echo "type-check: ok"
+    else
+        (cd "$work" && git diff --no-index /dev/null example.ts 2>/dev/null | dripbird)
+        deno check "$work/example.ts" && echo "type-check: ok"
+    fi
     echo "exit: $?"
-    deno check "$work/example.ts" && echo "type-check: ok"
     rm -rf "$work"
 done
 ```

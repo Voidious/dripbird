@@ -28,13 +28,25 @@ abort so you can re-stage). If no changes are needed, it exits 0.
 
 ## Installation
 
-Requires [Deno](https://deno.land) 2.0+ and
-[Lefthook](https://github.com/evilmartians/lefthook).
+Requires [Deno](https://deno.land) 2.0+.
 
 ```bash
 git clone https://github.com/Voidious/dripbird
 cd dripbird
 deno task install
+```
+
+This installs the `dripbird` CLI globally.
+
+### Pre-commit hooks (contributors)
+
+The repo uses [Lefthook](https://github.com/evilmartians/lefthook) to run
+`deno fmt --check`, `deno lint`, and the 100% coverage test suite on staged files
+before each commit. Contributors need Lefthook installed once, then the hooks wired
+into the local clone:
+
+```bash
+lefthook install
 ```
 
 ## Usage
@@ -69,19 +81,21 @@ Local overrides take precedence over committed settings.
 
 ### Options
 
-| Option                          | Default       | Description                                                                               |
-| ------------------------------- | ------------- | ----------------------------------------------------------------------------------------- |
-| `max_function_lines`            | `75`          | Line count threshold above which the function splitter will consider splitting a function |
-| `function_splitter_retries`     | `2`           | Number of LLM retry attempts when naming a helper function                                |
-| `function_matcher_retries`      | `2`           | Number of LLM retry attempts when a function matcher edit fails verification              |
-| `duplicate_extractor_min_lines` | `2`           | Minimum line span for a code block to be considered for duplicate extraction              |
-| `duplicate_extractor_max_lines` | `12`          | Maximum line span for a code block to be considered for duplicate extraction              |
-| `duplicate_extractor_retries`   | `2`           | Number of LLM retry attempts when a duplicate extraction fails verification               |
-| `provider`                      | `"moonshot"`  | LLM provider (currently only `"moonshot"`)                                                |
-| `model`                         | `"kimi-k2.5"` | LLM model name to use                                                                     |
-| `enabled_refactors`             | `[]`          | If non-empty, only these refactors will run                                               |
-| `disabled_refactors`            | `[]`          | These refactors will be skipped                                                           |
-| `verbose`                       | `false`       | Print detailed log output for each refactor                                               |
+| Option                           | Default       | Description                                                                               |
+| -------------------------------- | ------------- | ----------------------------------------------------------------------------------------- |
+| `max_function_lines`             | `75`          | Line count threshold above which the function splitter will consider splitting a function |
+| `function_splitter_retries`      | `2`           | Number of LLM retry attempts when naming a helper function                                |
+| `function_matcher_retries`       | `2`           | Number of LLM retry attempts when a function matcher edit fails verification              |
+| `duplicate_extractor_min_lines`  | `2`           | Minimum line span for a code block to be considered for duplicate extraction              |
+| `duplicate_extractor_max_lines`  | `12`          | Maximum line span for a code block to be considered for duplicate extraction              |
+| `duplicate_extractor_retries`    | `2`           | Number of LLM retry attempts when a duplicate extraction fails verification               |
+| `duplicate_extractor_shared_dir` | `"common"`    | Preferred directory name for cross-file extraction's shared helper modules                |
+| `duplicate_extractor_cross_file` | `true`        | Whether duplicate extraction may extract across files                                     |
+| `provider`                       | `"moonshot"`  | LLM provider (currently only `"moonshot"`)                                                |
+| `model`                          | `"kimi-k2.6"` | LLM model name to use                                                                     |
+| `enabled_refactors`              | `[]`          | If non-empty, only these refactors will run                                               |
+| `disabled_refactors`             | `[]`          | These refactors will be skipped                                                           |
+| `verbose`                        | `false`       | Print detailed log output for each refactor                                               |
 
 ### Example `dripbird.yml`
 
@@ -374,11 +388,38 @@ class Account {
 }
 ```
 
+**Scope (across files):** structurally identical blocks in two or more diff files
+are extracted into a helper in a new shared module, and every involved file imports
+it. Placement is deterministic and cycle-safe by construction: the module lives
+under the deepest common ancestor of the involved files, in the first usable
+directory from `duplicate_extractor_shared_dir` (default `common`), then `shared`,
+`lib`, `util`. Each duplicate group gets its own module named after the helper. The
+shared module is a leaf — imports the blocks need move into it verbatim (packages)
+or re-anchored (relative), and a group is skipped when an import cannot be proven to
+still resolve or the placement could create a cycle. Inserted and re-anchored
+imports carry explicit module extensions (`./common/helper.ts`), so the rewritten
+files work under Deno's extension-required resolution and Node-style toolchains
+alike. Every proposal must also pass a multi-file type check (no new diagnostics vs.
+the pre-change baseline) before the LLM review. Blocks using `this` stay single-file
+only. After a rewrite, imports the file no longer references are pruned, so callers
+never keep stale imports of helpers they only reach through a newer one. New shared
+modules inherit the leading `// deno-lint-ignore-file` directives of the files whose
+code they carry (union, deduplicated) — the moved code already had its lint
+suppressions, and the module must not start failing rules the sources passed. A
+directive the generated module provably does not trip is not emitted (today:
+`no-explicit-any`, decided by an AST scan for `any` annotations), so propagation
+never leaves an unused ignore that fails `ban-unused-ignore` in repos that enable
+it; rules that cannot be decided statically stay suppressed.
+
 Skipped when:
 
 - Fewer than two duplicate blocks overlap the diff
 - The LLM rejects the group as not actually duplicated
 - A block uses `this` but the blocks are not all instance methods of one class
+- A cross-file group's imports cannot move, or no usable shared directory exists
+- Re-detected residue would only wrap a helper extracted earlier in the same run
+  (every block just declares locals, calls that helper, and branches/returns around
+  those calls — a trivial proxy)
 - No LLM API key is configured (`MOONSHOT_API_KEY`)
 
 ## Architecture
@@ -397,7 +438,7 @@ src/cli.ts                 Entry point: reads stdin, calls run()
                 │
                 ├── src/llm.ts     createLLMClient(): Moonshot AI integration
                 │
-                ├── src/type_checker.ts  TypeCheckerImpl: TypeScript type checking
+                ├── src/type_checker.ts  TypeScript type checking
                 │
                 └── src/engine.ts  runRefactors(): chains refactors sequentially
                         │
@@ -406,7 +447,9 @@ src/cli.ts                 Entry point: reads stdin, calls run()
                                 ├── function_splitter.ts   Split long functions (LLM-assisted)
                                 ├── function_matcher.ts    Replace duplicate code with function calls (LLM-assisted)
                                 ├── function_matcher_imports.ts Cross-file import resolution for the function matcher
-                                └── duplicate_extractor.ts Extract duplicate blocks into a helper (LLM-assisted)
+                                ├── duplicate_extractor.ts Extract duplicate blocks into a helper (LLM-assisted)
+                                ├── duplicate_extractor_cross.ts Cross-file duplicate extraction into shared modules
+                                └── duplicate_extractor_placement.ts Cycle-safe shared-module placement for cross-file extraction
 ```
 
 ### Adding a new refactor

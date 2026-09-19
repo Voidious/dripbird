@@ -1,3 +1,4 @@
 .deno/
 .coverage/
 .dripbird.yml
+cov/

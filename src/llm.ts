@@ -53,6 +53,25 @@ export interface ExtractionContext {
     className: string;
 }
 
+/** One call-site entry for a cross-file extraction review. */
+export interface CrossFileReviewCallSite {
+    file: string;
+    location: string;
+    /** The import statement added to the file (binds the helper). */
+    importLine: string;
+    originalBlock: string;
+    replacement: string;
+}
+
+/** Structured review input for a cross-file extraction. */
+export interface CrossFileReviewEntities {
+    /** Project-relative path of the new shared module. */
+    modulePath: string;
+    /** Full content of the new shared module. */
+    helperModule: string;
+    callSites: CrossFileReviewCallSite[];
+}
+
 export interface LLMClient {
     nameFunction(
         context: string,
@@ -93,6 +112,22 @@ export interface LLMClient {
         previousFeedback?: string,
         context?: ExtractionContext,
     ): Promise<ExtractionResult>;
+
+    verifyCrossFileDuplicateMatch(
+        blocks: Array<{ file: string; source: string }>,
+    ): Promise<DuplicateVerifyResult>;
+
+    generateCrossFileExtraction(
+        blocks: Array<{ file: string; source: string }>,
+        destination: { modulePath: string; imports: string[] },
+        forbiddenNames: string[],
+        previousFeedback?: string,
+    ): Promise<ExtractionResult>;
+
+    reviewCrossFileChange(
+        description: string,
+        entities: CrossFileReviewEntities,
+    ): Promise<ReviewResult>;
 }
 
 export interface LLMOptions {
@@ -648,6 +683,7 @@ export class MoonshotClient implements LLMClient {
                 `2. RETURN / CONTROL FLOW: if the ORIGINAL block ended with a \`return X\`, the REPLACEMENT ends with \`return helper(...)\` (or otherwise propagates the value). If the ORIGINAL block had an EARLY \`return\`/\`break\`/\`continue\`/\`throw\` that escaped an enclosing scope, the helper reproduces it internally AND the call site propagates it (e.g. \`const r = helper(...); if (r === null) return null;\`).\n` +
                 `3. NO BROKEN SHARED MUTABLE STATE: the helper must not rely on, or silently drop, mutable state shared with code OUTSIDE the block. If the ORIGINAL block declared or mutated a local (counter, accumulator, flag) that is read or mutated by OTHER code — e.g. a variable captured by a closure/callback defined elsewhere in the same function — then returning that value by value from the helper BREAKS the sharing (the outer code would mutate a copy). Reject.\n` +
                 `4. ASSIGNMENTS USED AFTERWARD: any variable the ORIGINAL block assigned and that is read later in the enclosing scope is still produced (returned by the helper and assigned at the call site).\n` +
+                `5. NO UNDEFINED-SENTINEL CONFLATION: the helper must not return \`undefined\` for BOTH a legitimate value (e.g. the input passed through) and a "not handled / not a base case" signal, unless the call site can distinguish the two cases. If a caller cannot tell them apart, a legitimate \`undefined\` input falls through to code that does not expect it (e.g. recursing on \`undefined\` and throwing). Reject.\n` +
                 `Use the review tool to answer.`,
         }];
     }
@@ -819,6 +855,226 @@ export class MoonshotClient implements LLMClient {
             helperFunction: result.helper_function,
             callSites: result.call_sites,
         };
+    }
+
+    async verifyCrossFileDuplicateMatch(
+        blocks: Array<{ file: string; source: string }>,
+    ): Promise<DuplicateVerifyResult> {
+        const blocksText = blocks
+            .map((b, i) =>
+                `Block ${
+                    i + 1
+                } (file: ${b.file}):\n\`\`\`typescript\n${b.source.trim()}\n\`\`\``
+            )
+            .join("\n\n");
+        const messages: ChatMessage[] = [
+            {
+                role: "user",
+                content:
+                    `Several code blocks in DIFFERENT files of a TypeScript/JavaScript project may perform the same operation. They would be extracted into one helper function in a new shared module that every involved file imports.\n\n` +
+                    `${blocksText}\n\n` +
+                    `Do these code blocks perform the same semantic operation, such that they could all be replaced by calls to a single helper function? ` +
+                    `The blocks must form a SELF-CONTAINED operation: every value they read must be a parameter, locally produced, or a module import binding (imports can move to the shared module). If a block declares mutable local state (e.g. a counter, accumulator, or flag) that is read or mutated by code OUTSIDE the block — such as a variable closed over by a visitor/callback defined later in the same function — the blocks are NOT safely extractable, so return is_match=false. ` +
+                    `Blocks from different files must not depend on file-level state of their own file (other than imports). ` +
+                    `If most blocks match but some don't, exclude the non-matching ones. Use the evaluate_duplicates tool.`,
+            },
+        ];
+        const tool: ToolDefinition = {
+            type: "function",
+            function: {
+                name: "evaluate_duplicates",
+                description:
+                    "Evaluate whether code blocks are semantically equivalent and identify any to exclude",
+                parameters: {
+                    type: "object",
+                    properties: {
+                        is_match: {
+                            type: "boolean",
+                            description:
+                                "True if the code blocks perform the same semantic operation",
+                        },
+                        exclude_indices: {
+                            type: "array",
+                            items: { type: "integer" },
+                            description:
+                                "0-based indices of blocks to exclude from extraction",
+                        },
+                        reason: {
+                            type: "string",
+                            description: "Explanation of the evaluation",
+                        },
+                    },
+                    required: [
+                        "is_match",
+                        "exclude_indices",
+                        "reason",
+                    ],
+                },
+            },
+        };
+        const result = await this.callWithTool<{
+            is_match: boolean;
+            exclude_indices: number[];
+            reason: string;
+        }>(messages, tool, "verify cross-file duplicate match");
+        return {
+            isMatch: result.is_match,
+            excludeIndices: result.exclude_indices ?? [],
+            reason: result.reason,
+        };
+    }
+
+    async generateCrossFileExtraction(
+        blocks: Array<{ file: string; source: string }>,
+        destination: { modulePath: string; imports: string[] },
+        forbiddenNames: string[],
+        previousFeedback?: string,
+    ): Promise<ExtractionResult> {
+        const feedbackSection = previousFeedback
+            ? `\n\nIMPORTANT: A previous attempt was rejected with this feedback. Fix the issue:\n${previousFeedback}`
+            : "";
+        const forbiddenSection = forbiddenNames.length
+            ? `\n\nThe helper name must NOT be any of: ${
+                forbiddenNames.slice(0, 40).join(", ")
+            }${forbiddenNames.length > 40 ? ", ..." : ""}`
+            : "";
+        const blocksText = blocks
+            .map((b, i) =>
+                `Block ${
+                    i + 1
+                } (file: ${b.file}):\n\`\`\`typescript\n${b.source.trimEnd()}\n\`\`\``
+            )
+            .join("\n\n");
+        const importsSection = destination.imports.length > 0
+            ? `The shared module will contain exactly these import statements (the helper body may reference these module-level names and NOTHING else from module scope):\n\`\`\`typescript\n${
+                destination.imports.join("\n")
+            }\n\`\`\`\n`
+            : `The shared module will have no imports; the helper may only reference its own parameters and locals.\n`;
+
+        const messages: ChatMessage[] = [
+            {
+                role: "user",
+                content:
+                    `Extract a common helper from these duplicate code blocks. The blocks live in DIFFERENT files; the helper will live in a NEW shared module (${destination.modulePath}) that each file will import.\n\n` +
+                    `${blocksText}\n\n` +
+                    `${importsSection}\n` +
+                    `Requirements:\n` +
+                    `- Generate a top-level function declaration (not arrow, not a class method), WITHOUT an \`export\` keyword\n` +
+                    `- Choose a descriptive camelCase name (it becomes the module's file name)\n` +
+                    `- The helper may ONLY reference its parameters, its own locals, and the module-level imports listed above — no other outer-scope names\n` +
+                    `- Pass all necessary values as parameters\n` +
+                    `- If a code block ends with a return, the call site must also return\n` +
+                    `- Each call site must invoke the helper by the exact name you choose, with the same indentation as its block above\n` +
+                    `- Output exactly ${blocks.length} call sites, one per block${forbiddenSection}${feedbackSection}\n\n` +
+                    `Use the generate_extraction tool.`,
+            },
+        ];
+        const tool: ToolDefinition = {
+            type: "function",
+            function: {
+                name: "generate_extraction",
+                description:
+                    "Generate an exported helper function and call sites for duplicate code blocks across files",
+                parameters: {
+                    type: "object",
+                    properties: {
+                        helper_name: {
+                            type: "string",
+                            description:
+                                "camelCase name for the new helper function",
+                        },
+                        helper_function: {
+                            type: "string",
+                            description:
+                                "Complete source of the helper function declaration (no export keyword)",
+                        },
+                        call_sites: {
+                            type: "array",
+                            items: { type: "string" },
+                            description:
+                                "Replacement code for each block, preserving indentation",
+                        },
+                    },
+                    required: [
+                        "helper_name",
+                        "helper_function",
+                        "call_sites",
+                    ],
+                },
+            },
+        };
+        const result = await this.callWithTool<{
+            helper_name: string;
+            helper_function: string;
+            call_sites: string[];
+        }>(messages, tool, "generate cross-file extraction");
+        return {
+            helperName: result.helper_name,
+            helperFunction: result.helper_function,
+            callSites: result.call_sites,
+        };
+    }
+
+    async reviewCrossFileChange(
+        description: string,
+        entities: CrossFileReviewEntities,
+    ): Promise<ReviewResult> {
+        const callSitesText = entities.callSites
+            .map((cs, i) =>
+                `--- Site ${i + 1}: ${cs.file}, ${cs.location} ---\n` +
+                `IMPORT added to the file:\n\`\`\`typescript\n${cs.importLine}\n\`\`\`\n` +
+                `ORIGINAL block:\n\`\`\`typescript\n${cs.originalBlock.trim()}\n\`\`\`\n` +
+                `REPLACEMENT call site:\n\`\`\`typescript\n${cs.replacement.trim()}\n\`\`\``
+            )
+            .join("\n\n");
+
+        const messages: ChatMessage[] = [
+            {
+                role: "user",
+                content:
+                    `Review a proposed cross-file duplicate-code extraction.\n\n` +
+                    `Description: ${description}\n\n` +
+                    `NEW SHARED MODULE (${entities.modulePath}):\n\`\`\`typescript\n${entities.helperModule.trim()}\n\`\`\`\n\n` +
+                    `CALL-SITE REPLACEMENTS — for each site below, a new import was added to the file and the ORIGINAL duplicate block was replaced by the REPLACEMENT shown. Verify that each replacement, together with the helper in the shared module, preserves the original block's behavior.\n\n` +
+                    `${callSitesText}\n\n` +
+                    `Accept ONLY if all of the following hold; reject if any fail:\n` +
+                    `1. IMPORT WIRING: each added import binds the helper under the exact name its call site invokes, from the shared module's path.\n` +
+                    `2. PARAMETER WIRING: at each call site, the arguments passed to the helper match — in identity and order — the values the ORIGINAL block read from its enclosing scope, and every value the helper reads is a parameter or one of the shared module's imports (no hidden dependency on outer-scope names of the original files).\n` +
+                    `3. RETURN / CONTROL FLOW: if the ORIGINAL block ended with a \`return X\`, the REPLACEMENT ends with \`return helper(...)\` (or otherwise propagates the value). If the ORIGINAL block had an EARLY \`return\`/\`break\`/\`continue\`/\`throw\` that escaped an enclosing scope, the helper reproduces it internally AND the call site propagates it.\n` +
+                    `4. NO BROKEN SHARED MUTABLE STATE: the helper must not rely on, or silently drop, mutable state shared with code OUTSIDE the block in the original file.\n` +
+                    `5. ASSIGNMENTS USED AFTERWARD: any variable the ORIGINAL block assigned and that is read later in the enclosing scope is still produced at the call site.\n` +
+                    `6. NO UNDEFINED-SENTINEL CONFLATION: the helper must not return \`undefined\` for BOTH a legitimate value (e.g. the input passed through) and a "not handled / not a base case" signal, unless the call site can distinguish the two cases. If a caller cannot tell them apart, a legitimate \`undefined\` input falls through to code that does not expect it (e.g. recursing on \`undefined\` and throwing). Reject.\n` +
+                    `Use the review tool to answer.`,
+            },
+        ];
+        const tool: ToolDefinition = {
+            type: "function",
+            function: {
+                name: "review",
+                description: "Review a proposed code change",
+                parameters: {
+                    type: "object",
+                    properties: {
+                        accepted: {
+                            type: "boolean",
+                            description:
+                                "True if the change is semantically correct",
+                        },
+                        feedback: {
+                            type: "string",
+                            description:
+                                "Specific issues found, or empty if accepted",
+                        },
+                    },
+                    required: ["accepted", "feedback"],
+                },
+            },
+        };
+        const result = await this.callWithTool<{
+            accepted: boolean;
+            feedback: string;
+        }>(messages, tool, "review cross-file change");
+        return { accepted: result.accepted, feedback: result.feedback };
     }
 }
 

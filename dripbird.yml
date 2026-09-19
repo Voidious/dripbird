@@ -23,7 +23,7 @@ duplicate_extractor_retries: 2
 provider: moonshot
 
 # LLM model name
-model: kimi-k2.5
+model: kimi-k2.6
 
 # only run these refactors (empty = all enabled)
 # available: if_not_else, function_splitter, function_matcher, duplicate_extractor

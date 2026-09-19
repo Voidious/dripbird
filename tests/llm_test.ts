@@ -222,6 +222,8 @@ Deno.test("createLLMClient passes stats to client", async () => {
             duplicate_extractor_min_lines: 2,
             duplicate_extractor_max_lines: 12,
             duplicate_extractor_retries: 2,
+            duplicate_extractor_shared_dir: "common",
+            duplicate_extractor_cross_file: true,
             provider: "moonshot",
             model: "test-model",
             enabled_refactors: [],
@@ -312,8 +314,10 @@ Deno.test("createLLMClient returns null without API key", () => {
             duplicate_extractor_min_lines: 2,
             duplicate_extractor_max_lines: 12,
             duplicate_extractor_retries: 2,
+            duplicate_extractor_shared_dir: "common",
+            duplicate_extractor_cross_file: true,
             provider: "moonshot",
-            model: "kimi-k2.5",
+            model: "kimi-k2.6",
             enabled_refactors: [],
             disabled_refactors: [],
             verbose: false,
@@ -337,8 +341,10 @@ Deno.test("createLLMClient uses env var API key", () => {
             duplicate_extractor_min_lines: 2,
             duplicate_extractor_max_lines: 12,
             duplicate_extractor_retries: 2,
+            duplicate_extractor_shared_dir: "common",
+            duplicate_extractor_cross_file: true,
             provider: "moonshot",
-            model: "kimi-k2.5",
+            model: "kimi-k2.6",
             enabled_refactors: [],
             disabled_refactors: [],
             verbose: false,
@@ -365,8 +371,10 @@ Deno.test("createLLMClient uses options API key over env", () => {
             duplicate_extractor_min_lines: 2,
             duplicate_extractor_max_lines: 12,
             duplicate_extractor_retries: 2,
+            duplicate_extractor_shared_dir: "common",
+            duplicate_extractor_cross_file: true,
             provider: "moonshot",
-            model: "kimi-k2.5",
+            model: "kimi-k2.6",
             enabled_refactors: [],
             disabled_refactors: [],
             verbose: false,
@@ -392,6 +400,8 @@ Deno.test("createLLMClient passes custom fetchFn", async () => {
         duplicate_extractor_min_lines: 2,
         duplicate_extractor_max_lines: 12,
         duplicate_extractor_retries: 2,
+        duplicate_extractor_shared_dir: "common",
+        duplicate_extractor_cross_file: true,
         provider: "moonshot",
         model: "test-model",
         enabled_refactors: [],
@@ -1542,6 +1552,10 @@ Deno.test("MoonshotClient reviewChange builds structured prompt when entities ar
         content.includes("ASSIGNMENTS USED AFTERWARD"),
         "prompt should include the assignments-used-afterward check",
     );
+    assert(
+        content.includes("UNDEFINED-SENTINEL CONFLATION"),
+        "prompt should include the undefined-sentinel check",
+    );
 
     // Hoisting note is retained so file-end placement is not falsely flagged.
     assert(
@@ -1567,4 +1581,156 @@ Deno.test("MoonshotClient verifyDuplicateMatch prompt rejects mutable shared sta
         content.includes("mutable local state"),
         "prompt should flag mutable local state mutated outside the block",
     );
+});
+
+Deno.test("MoonshotClient verifyCrossFileDuplicateMatch labels blocks with files", async () => {
+    const { fetchFn, getRequest } = captureToolCallFetch(
+        "evaluate_duplicates",
+        { is_match: true, exclude_indices: [1], reason: "ok" },
+    );
+    const client = new MoonshotClient("key", "model", fetchFn);
+    const result = await client.verifyCrossFileDuplicateMatch([
+        { file: "a.ts", source: "send(x);\nsave(x);" },
+        { file: "b.ts", source: "send(y);\nsave(y);" },
+        { file: "c.ts", source: "other();" },
+    ]);
+
+    assertEquals(result, { isMatch: true, excludeIndices: [1], reason: "ok" });
+    const body = await getRequest()!.json();
+    const content = body.messages[0].content as string;
+    assert(content.includes("Block 1 (file: a.ts)"));
+    assert(content.includes("Block 2 (file: b.ts)"));
+    assert(content.includes("DIFFERENT files"));
+    assert(content.includes("shared module"));
+});
+
+Deno.test("MoonshotClient generateCrossFileExtraction carries destination and constraints", async () => {
+    const { fetchFn, getRequest } = captureToolCallFetch("generate_extraction", {
+        helper_name: "logSend",
+        helper_function: "function logSend(x) { log(x); }",
+        call_sites: ["    logSend(x);", "    logSend(y);"],
+    });
+    const client = new MoonshotClient("key", "model", fetchFn);
+    const result = await client.generateCrossFileExtraction(
+        [
+            { file: "a.ts", source: "send(x);" },
+            { file: "b.ts", source: "send(y);" },
+        ],
+        {
+            modulePath: "common/logSend.ts",
+            imports: ['import { log } from "../log";'],
+        },
+        ["alpha", "beta"],
+        "previous attempt failed",
+    );
+
+    assertEquals(result.helperName, "logSend");
+    assertEquals(result.callSites.length, 2);
+    const body = await getRequest()!.json();
+    const content = body.messages[0].content as string;
+    assert(content.includes("common/logSend.ts"));
+    assert(content.includes('import { log } from "../log";'));
+    assert(content.includes("WITHOUT an `export` keyword"));
+    assert(content.includes("may ONLY reference its parameters"));
+    assert(content.includes("exactly 2 call sites"));
+    assert(content.includes("alpha, beta"));
+    assert(content.includes("previous attempt failed"));
+});
+
+Deno.test("MoonshotClient verifyCrossFileDuplicateMatch defaults missing exclude_indices", async () => {
+    const { fetchFn, getRequest } = captureToolCallFetch(
+        "evaluate_duplicates",
+        { is_match: true, reason: "all match" },
+    );
+    const client = new MoonshotClient("key", "model", fetchFn);
+    const result = await client.verifyCrossFileDuplicateMatch([
+        { file: "a.ts", source: "send(x);" },
+        { file: "b.ts", source: "send(y);" },
+    ]);
+
+    assertEquals(result, {
+        isMatch: true,
+        excludeIndices: [],
+        reason: "all match",
+    });
+    const body = await getRequest()!.json();
+    assert((body.messages[0].content as string).includes("Block 2 (file: b.ts)"));
+});
+
+Deno.test("MoonshotClient generateCrossFileExtraction truncates long forbidden lists", async () => {
+    const { fetchFn, getRequest } = captureToolCallFetch("generate_extraction", {
+        helper_name: "noop",
+        helper_function: "function noop() {}",
+        call_sites: ["    noop();"],
+    });
+    const client = new MoonshotClient("key", "model", fetchFn);
+    const forbidden = Array.from({ length: 45 }, (_, i) => `name${i}`);
+    await client.generateCrossFileExtraction(
+        [{ file: "a.ts", source: "noop();" }],
+        { modulePath: "common/noop.ts", imports: [] },
+        forbidden,
+    );
+    const body = await getRequest()!.json();
+    const content = body.messages[0].content as string;
+    assert(content.includes("name39"));
+    assert(content.includes(", ..."));
+});
+
+Deno.test("MoonshotClient generateCrossFileExtraction omits the imports block when empty", async () => {
+    const { fetchFn, getRequest } = captureToolCallFetch("generate_extraction", {
+        helper_name: "noop",
+        helper_function: "function noop() {}",
+        call_sites: ["    noop();"],
+    });
+    const client = new MoonshotClient("key", "model", fetchFn);
+    await client.generateCrossFileExtraction(
+        [{ file: "a.ts", source: "noop();" }],
+        { modulePath: "common/noop.ts", imports: [] },
+        [],
+    );
+    const body = await getRequest()!.json();
+    const content = body.messages[0].content as string;
+    assert(content.includes("no imports"));
+});
+
+Deno.test("MoonshotClient reviewCrossFileChange builds cross-file prompt", async () => {
+    const { fetchFn, getRequest } = captureToolCallFetch("review", {
+        accepted: false,
+        feedback: "arguments are swapped",
+    });
+    const client = new MoonshotClient("key", "model", fetchFn);
+    const result = await client.reviewCrossFileChange(
+        "extracted cross-file duplicate code into common/greet.ts",
+        {
+            modulePath: "common/greet.ts",
+            helperModule:
+                'import { log } from "../log";\n\nexport function greet(n) { log(n); }\n',
+            callSites: [
+                {
+                    file: "a.ts",
+                    location: "lines 3-5 (alpha)",
+                    importLine: 'import { greet } from "./common/greet";',
+                    originalBlock: "const l = `Hi ${n}`;\nlog(l);",
+                    replacement: "greet(n);",
+                },
+                {
+                    file: "b.ts",
+                    location: "lines 4-6 (beta)",
+                    importLine: 'import { greet } from "./common/greet";',
+                    originalBlock: "const l = `Hi ${m}`;\nlog(l);",
+                    replacement: "greet(m);",
+                },
+            ],
+        },
+    );
+
+    assertEquals(result, { accepted: false, feedback: "arguments are swapped" });
+    const body = await getRequest()!.json();
+    const content = body.messages[0].content as string;
+    assert(content.includes("NEW SHARED MODULE (common/greet.ts)"));
+    assert(content.includes("IMPORT added to the file"));
+    assert(content.includes("IMPORT WIRING"));
+    assert(content.includes("UNDEFINED-SENTINEL CONFLATION"));
+    assert(content.includes("Site 1: a.ts, lines 3-5 (alpha)"));
+    assert(content.includes("Site 2: b.ts, lines 4-6 (beta)"));
 });

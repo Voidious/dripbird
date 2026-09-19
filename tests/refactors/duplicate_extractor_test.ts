@@ -27,8 +27,10 @@ const testConfig: Config = {
     duplicate_extractor_min_lines: 2,
     duplicate_extractor_max_lines: 12,
     duplicate_extractor_retries: 2,
+    duplicate_extractor_shared_dir: "common",
+    duplicate_extractor_cross_file: true,
     provider: "moonshot",
-    model: "kimi-k2.5",
+    model: "kimi-k2.6",
     enabled_refactors: [],
     disabled_refactors: [],
     verbose: false,
@@ -74,6 +76,18 @@ function mockLLM(options: {
                 helperFunction: "function extractedHelper() {}\n",
                 callSites: ["    extractedHelper();\n", "    extractedHelper();\n"],
             };
+        },
+        // deno-lint-ignore require-await
+        async verifyCrossFileDuplicateMatch(): Promise<DuplicateVerifyResult> {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateCrossFileExtraction(): Promise<ExtractionResult> {
+            return { helperName: "", helperFunction: "", callSites: [] };
+        },
+        // deno-lint-ignore require-await
+        async reviewCrossFileChange(): Promise<ReviewResult> {
+            return { accepted: true, feedback: "" };
         },
     };
 }
@@ -609,6 +623,18 @@ Deno.test("duplicate extractor: retries on review rejection then succeeds", asyn
                 ],
             };
         },
+        // deno-lint-ignore require-await
+        async verifyCrossFileDuplicateMatch(): Promise<DuplicateVerifyResult> {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateCrossFileExtraction(): Promise<ExtractionResult> {
+            return { helperName: "", helperFunction: "", callSites: [] };
+        },
+        // deno-lint-ignore require-await
+        async reviewCrossFileChange(): Promise<ReviewResult> {
+            return { accepted: true, feedback: "" };
+        },
     };
 
     const extractor = createDuplicateExtractor(testConfig, llm);
@@ -658,6 +684,18 @@ Deno.test("duplicate extractor: gives up after retries exhausted", async () => {
                 helperFunction: "INVALID {{{\n",
                 callSites: ["INVALID\n", "INVALID\n"],
             };
+        },
+        // deno-lint-ignore require-await
+        async verifyCrossFileDuplicateMatch(): Promise<DuplicateVerifyResult> {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateCrossFileExtraction(): Promise<ExtractionResult> {
+            return { helperName: "", helperFunction: "", callSites: [] };
+        },
+        // deno-lint-ignore require-await
+        async reviewCrossFileChange(): Promise<ReviewResult> {
+            return { accepted: true, feedback: "" };
         },
     };
 
@@ -718,6 +756,18 @@ Deno.test("duplicate extractor: no retry when retries is 0", async () => {
                 helperFunction: "INVALID {{{\n",
                 callSites: ["INVALID\n", "INVALID\n"],
             };
+        },
+        // deno-lint-ignore require-await
+        async verifyCrossFileDuplicateMatch(): Promise<DuplicateVerifyResult> {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateCrossFileExtraction(): Promise<ExtractionResult> {
+            return { helperName: "", helperFunction: "", callSites: [] };
+        },
+        // deno-lint-ignore require-await
+        async reviewCrossFileChange(): Promise<ReviewResult> {
+            return { accepted: true, feedback: "" };
         },
     };
 
@@ -897,6 +947,18 @@ Deno.test("duplicate extractor: skips overlapping claimed ranges", async () => {
                 ],
             };
         },
+        // deno-lint-ignore require-await
+        async verifyCrossFileDuplicateMatch(): Promise<DuplicateVerifyResult> {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateCrossFileExtraction(): Promise<ExtractionResult> {
+            return { helperName: "", helperFunction: "", callSites: [] };
+        },
+        // deno-lint-ignore require-await
+        async reviewCrossFileChange(): Promise<ReviewResult> {
+            return { accepted: true, feedback: "" };
+        },
     };
 
     const extractor = createDuplicateExtractor(testConfig, llm);
@@ -974,6 +1036,18 @@ Deno.test("duplicate extractor: extracts multiple distinct groups in one pass", 
                 ],
             };
         },
+        // deno-lint-ignore require-await
+        async verifyCrossFileDuplicateMatch(): Promise<DuplicateVerifyResult> {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateCrossFileExtraction(): Promise<ExtractionResult> {
+            return { helperName: "", helperFunction: "", callSites: [] };
+        },
+        // deno-lint-ignore require-await
+        async reviewCrossFileChange(): Promise<ReviewResult> {
+            return { accepted: true, feedback: "" };
+        },
     };
 
     const extractor = createDuplicateExtractor(testConfig, llm);
@@ -1045,6 +1119,18 @@ Deno.test("duplicate extractor: passes feedback on retry", async () => {
                     "    const y = getValue();\n    logResult(y);\n",
                 ],
             };
+        },
+        // deno-lint-ignore require-await
+        async verifyCrossFileDuplicateMatch(): Promise<DuplicateVerifyResult> {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateCrossFileExtraction(): Promise<ExtractionResult> {
+            return { helperName: "", helperFunction: "", callSites: [] };
+        },
+        // deno-lint-ignore require-await
+        async reviewCrossFileChange(): Promise<ReviewResult> {
+            return { accepted: true, feedback: "" };
         },
     };
 
@@ -2040,6 +2126,18 @@ Deno.test("duplicate extractor: overlapping sub-sequences are de-overlapped befo
                 callSites: ["    doHandles();\n", "    doHandles();\n"],
             };
         },
+        // deno-lint-ignore require-await
+        async verifyCrossFileDuplicateMatch(): Promise<DuplicateVerifyResult> {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateCrossFileExtraction(): Promise<ExtractionResult> {
+            return { helperName: "", helperFunction: "", callSites: [] };
+        },
+        // deno-lint-ignore require-await
+        async reviewCrossFileChange(): Promise<ReviewResult> {
+            return { accepted: true, feedback: "" };
+        },
     };
 
     const extractor = createDuplicateExtractor(maxLinesConfig, llm);
@@ -2158,6 +2256,18 @@ Deno.test("duplicate extractor: type-check gate retries then accepts once type e
                 helperFunction: "function goodHelper() {}\n",
                 callSites: ["    goodHelper();\n", "    goodHelper();\n"],
             };
+        },
+        // deno-lint-ignore require-await
+        async verifyCrossFileDuplicateMatch(): Promise<DuplicateVerifyResult> {
+            return { isMatch: false, excludeIndices: [], reason: "" };
+        },
+        // deno-lint-ignore require-await
+        async generateCrossFileExtraction(): Promise<ExtractionResult> {
+            return { helperName: "", helperFunction: "", callSites: [] };
+        },
+        // deno-lint-ignore require-await
+        async reviewCrossFileChange(): Promise<ReviewResult> {
+            return { accepted: true, feedback: "" };
         },
     };
 
