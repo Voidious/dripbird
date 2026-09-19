@@ -28,13 +28,25 @@ abort so you can re-stage). If no changes are needed, it exits 0.
 
 ## Installation
 
-Requires [Deno](https://deno.land) 2.0+ and
-[Lefthook](https://github.com/evilmartians/lefthook).
+Requires [Deno](https://deno.land) 2.0+.
 
 ```bash
 git clone https://github.com/Voidious/dripbird
 cd dripbird
 deno task install
+```
+
+This installs the `dripbird` CLI globally.
+
+### Pre-commit hooks (contributors)
+
+The repo uses [Lefthook](https://github.com/evilmartians/lefthook) to run
+`deno fmt --check`, `deno lint`, and the 100% coverage test suite on staged files
+before each commit. Contributors need Lefthook installed once, then the hooks wired
+into the local clone:
+
+```bash
+lefthook install
 ```
 
 ## Usage
@@ -435,7 +447,9 @@ src/cli.ts                 Entry point: reads stdin, calls run()
                                 ├── function_splitter.ts   Split long functions (LLM-assisted)
                                 ├── function_matcher.ts    Replace duplicate code with function calls (LLM-assisted)
                                 ├── function_matcher_imports.ts Cross-file import resolution for the function matcher
-                                └── duplicate_extractor.ts Extract duplicate blocks into a helper (LLM-assisted)
+                                ├── duplicate_extractor.ts Extract duplicate blocks into a helper (LLM-assisted)
+                                ├── duplicate_extractor_cross.ts Cross-file duplicate extraction into shared modules
+                                └── duplicate_extractor_placement.ts Cycle-safe shared-module placement for cross-file extraction
 ```
 
 ### Adding a new refactor
